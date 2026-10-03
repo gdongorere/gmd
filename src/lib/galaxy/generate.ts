@@ -8,7 +8,7 @@
 
 import {
 	ARMS, ARM_PHASE_OFFSET, ArmSpec, GALAXY, IMF_MIX, OLD_MIX, ORION_SPUR, PATTERN_OMEGA,
-	SPECTRAL_CLASSES, SpectralClass, SpectralMix, YOUNG_MIX, DYNAMICS, relativeOmega,
+	SPECTRAL_CLASSES, SpectralClass, SpectralMix, YOUNG_MIX, DYNAMICS, fromSun, relativeOmega,
 } from './constants';
 import { createRng, Rng } from './random';
 import { LayerCounts } from './tiers';
@@ -316,16 +316,7 @@ function sphereDirection(rng: Rng): Point {
 	return { x: s * Math.cos(phi), y, z: s * Math.sin(phi) };
 }
 
-/** Heliocentric (distance, l, b) → galactocentric scene coordinates. */
-function fromSun(distance: number, l: number, b: number): Point {
-	return {
-		x: GALAXY.sunRadius - distance * Math.cos(b) * Math.cos(l),
-		y: GALAXY.sunHeight + distance * Math.sin(b),
-		z: distance * Math.cos(b) * Math.sin(l),
-	};
-}
-
-const GLOBULAR_CLUSTERS: Point[] = (() => {
+export const GLOBULAR_CLUSTERS: Point[] = (() => {
 	const rng = createRng(SEED ^ 0x9c);
 	return Array.from({ length: GALAXY.globularClusterCount }, () => {
 		const r = haloRadius(rng, 5, 1_200);

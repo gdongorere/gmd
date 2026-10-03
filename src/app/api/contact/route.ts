@@ -1,253 +1,70 @@
 // src/app/api/contact/route.ts
+// Public contact endpoint. It only accepts new messages: reading or editing stored
+// messages is done in Sanity Studio, never through a public URL.
 import { NextRequest, NextResponse } from 'next/server';
-import { writeClient, client } from '@/lib/sanity';
-import { logSanityInteraction } from '@/lib/sanityLogger';
-import { groq } from 'next-sanity';
+import { getWriteClient } from '@/lib/sanity.server';
+import { validateContact } from '@/lib/contactSchema';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const searchParams = req.nextUrl.searchParams;
-  const id = searchParams.get('id');
-  const status = searchParams.get('status');
+// Best-effort rate limit: per server instance, so it blunts floods rather than guaranteeing a cap.
+const WINDOW_MS = 10 * 60 * 1000;
+const MAX_PER_WINDOW = 5;
+const hits = new Map<string, number[]>();
 
-  try {
-    let query: string;
-    let params: { [key: string]: any } = {};
-    let message: string;
-
-    if (id) {
-      query = groq`*[_type == "contact" && _id == $id][0]`;
-      params = { id };
-      message = `Fetching contact message with ID: ${id}`;
-    } else if (status) {
-      query = groq`*[_type == "contact" && status == $status] | order(sentAt desc)`;
-      params = { status };
-      message = `Fetching contact messages with status: ${status}`;
-    } else {
-      query = groq`*[_type == "contact"] | order(sentAt desc)`;
-      message = 'Fetching all contact messages.';
-    }
-
-    const contacts = await client.fetch(query, params);
-
-    await logSanityInteraction(
-      'fetch',
-      `Successfully fetched contact messages. ${message}`,
-      'contact',
-      id || 'all/filtered',
-      'api-get',
-      true,
-      {
-        query: query,
-        // Corrected: Nest 'params' and 'resultCount' within the 'payload' field
-        payload: {
-          requestParams: params, // Renamed for clarity within payload
-          resultCount: Array.isArray(contacts) ? contacts.length : (contacts ? 1 : 0)
-        }
-      }
-    );
-
-    return NextResponse.json(contacts, { status: 200 });
-  } catch (error: any) {
-    console.error('Error in GET /api/contact:', error);
-    let errorMessage = 'Failed to fetch contact messages.';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'object' && error !== null && 'message' in error) {
-      errorMessage = (error as any).message;
-    }
-
-    await logSanityInteraction(
-      'error',
-      `Failed to fetch contact messages: ${errorMessage}`,
-      'contact',
-      id || 'all/filtered',
-      'api-get',
-      false,
-      {
-        query: searchParams.toString(),
-        errorDetails: errorMessage
-      }
-    );
-
-    return NextResponse.json({ message: errorMessage }, { status: 500 });
+function rateLimited(ip: string, now = Date.now()): boolean {
+  const recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
+  recent.push(now);
+  hits.set(ip, recent);
+  if (hits.size > 5000) {
+    for (const [key, times] of hits) if (times.every((t) => now - t >= WINDOW_MS)) hits.delete(key);
   }
+  return recent.length > MAX_PER_WINDOW;
 }
 
-// POST function to create a new contact message
+const json = (body: Record<string, unknown>, status: number, headers?: Record<string, string>) =>
+  NextResponse.json(body, { status, headers });
+
 export async function POST(req: NextRequest) {
-  let contactId: string | undefined;
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown';
+
+  if (rateLimited(ip)) {
+    return json({ message: 'Too many messages. Please try again in a few minutes.' }, 429, { 'Retry-After': '600' });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    const parsed = await req.json();
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('bad body');
+    body = parsed as Record<string, unknown>;
+  } catch {
+    return json({ message: 'Invalid request.' }, 400);
+  }
+
+  // Honeypot: real visitors never see this field. Pretend success so bots learn nothing.
+  if (typeof body.website === 'string' && body.website.trim() !== '') {
+    return json({ message: 'Message sent.' }, 200);
+  }
+
+  const { ok, errors, data } = validateContact(body);
+  if (!ok) {
+    return json({ message: 'Please check the highlighted fields.', errors }, 400);
+  }
 
   try {
-    const { name, email, phone, subject, message } = await req.json();
-
-    if (!name || !email || !subject || !message) {
-      await logSanityInteraction(
-        'error',
-        'Missing required fields for contact message submission.',
-        'contact',
-        undefined,
-        'client-submit',
-        false,
-        { payload: { name, email, subject, message }, errorDetails: 'Missing fields' }
-      );
-      return NextResponse.json(
-        { message: 'Missing required fields: name, email, subject, and message are required.' },
-        { status: 400 }
-      );
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      await logSanityInteraction(
-        'error',
-        'Invalid email format for contact message submission.',
-        'contact',
-        undefined,
-        'client-submit',
-        false,
-        { payload: { name, email, subject, message }, errorDetails: 'Invalid email format' }
-      );
-      return NextResponse.json(
-        { message: 'Invalid email format.' },
-        { status: 400 }
-      );
-    }
-
-    const newContactMessage = {
+    await getWriteClient().create({
       _type: 'contact',
-      name,
-      email,
-      phone: phone || null,
-      subject,
-      message,
+      name: data.name,
+      email: data.email,
+      phone: data.phone || null,
+      subject: data.subject,
+      message: data.message,
       sentAt: new Date().toISOString(),
       status: 'new',
-    };
-
-    const createdDocument = await writeClient.create(newContactMessage);
-    contactId = createdDocument._id;
-
-    await logSanityInteraction(
-      'create',
-      `New contact message from ${name} (${email}) - Subject: "${subject}".`,
-      'contact',
-      contactId,
-      'client-submit',
-      true,
-      { payload: newContactMessage }
-    );
-
-    return NextResponse.json(
-      { message: 'Contact message sent successfully!', data: createdDocument },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error('Error submitting contact message:', error);
-    let errorMessage = 'Failed to submit contact message.';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'object' && error !== null && 'message' in error) {
-      errorMessage = (error as any).message;
-    }
-
-    await logSanityInteraction(
-      'error',
-      `Failed to submit contact message: ${errorMessage}`,
-      'contact',
-      contactId,
-      'client-submit',
-      false,
-      { errorDetails: errorMessage, payload: req.json ? await req.json().catch(() => ({})) : {} }
-    );
-
-    return NextResponse.json(
-      { message: errorMessage },
-      { status: 500 }
-    );
-  }
-}
-
-// PUT function to update a contact message
-export async function PUT(req: NextRequest) {
-  let contactId: string | undefined;
-  try {
-    const { _id, ...updates } = await req.json();
-
-    if (!_id) {
-      await logSanityInteraction(
-        'error',
-        'Contact ID (_id) is required for updating a contact message.',
-        'contact',
-        undefined,
-        'api-put',
-        false,
-        { payload: updates, errorDetails: 'Missing _id' }
-      );
-      return NextResponse.json(
-        { message: 'Contact ID (_id) is required for updating.' },
-        { status: 400 }
-      );
-    }
-
-    contactId = _id;
-
-    if (updates.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.email)) {
-      await logSanityInteraction(
-        'error',
-        `Invalid email format provided for contact update for ID: ${contactId}.`,
-        'contact',
-        contactId,
-        'api-put',
-        false,
-        { payload: updates, errorDetails: 'Invalid email format' }
-      );
-      return NextResponse.json(
-        { message: 'Invalid email format provided for update.' },
-        { status: 400 }
-      );
-    }
-
-    const updatedDocument = await writeClient.patch(contactId!) // Keep the non-null assertion for TypeScript safety
-      .set(updates)
-      .commit();
-
-    await logSanityInteraction(
-      'update',
-      `Updated contact message with ID: ${contactId}. Fields: ${Object.keys(updates).join(', ')}.`,
-      'contact',
-      contactId,
-      'api-put',
-      true,
-      { payload: updates, newValue: updatedDocument } // Corrected: changed 'newDocumentState' to 'newValue'
-    );
-
-    return NextResponse.json(
-      { message: 'Contact message updated successfully!', data: updatedDocument },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error('Error in PUT /api/contact:', error);
-    let errorMessage = 'Failed to update contact message.';
-    if (error instanceof Error) {
-      errorMessage = error.message;
-    } else if (typeof error === 'object' && error !== null && 'message' in error) {
-      errorMessage = (error as any).message;
-    }
-
-    await logSanityInteraction(
-      'error',
-      `Failed to update contact message for ID ${contactId || 'unknown'}: ${errorMessage}`,
-      'contact',
-      contactId,
-      'api-put',
-      false,
-      { errorDetails: errorMessage, payload: req.json ? await req.json().catch(() => ({})) : {} }
-    );
-
-    return NextResponse.json(
-      { message: errorMessage },
-      { status: 500 }
-    );
+    });
+    return json({ message: 'Message sent.' }, 200);
+  } catch (error) {
+    console.error('Contact submission failed:', error instanceof Error ? error.message : error);
+    return json({ message: 'Something went wrong on my side. Please email me directly instead.' }, 500);
   }
 }

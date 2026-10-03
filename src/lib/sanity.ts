@@ -1,7 +1,6 @@
 // src/lib/sanity.ts
 import { createClient, SanityClient, groq } from 'next-sanity'; // Import groq here
 import createImageUrlBuilder from '@sanity/image-url';
-import type { Image } from 'sanity';
 import { SanityImageSource } from '@sanity/image-url/lib/types/types';
 
 // Environment variables for Sanity connection
@@ -50,16 +49,6 @@ const imageBuilder = createImageUrlBuilder({
 export const urlForImage = (source: SanityImageSource) => {
   return imageBuilder?.image(source).auto('format').fit('max');
 };
-
-// Define a separate client for write operations (if needed, with a write token)
-export const writeClient = createClient({
-  projectId: projectId,
-  dataset: dataset,
-  apiVersion: apiVersion,
-  useCdn: false, // Always ensure fresh data and write capabilities for writes
-  token: process.env.NEXT_PUBLIC_SANITY_API_WRITE_TOKEN, // Ensure this token is set for write operations
-});
-
 
 // Define project query using groq directly
 export const projectQuery = groq`

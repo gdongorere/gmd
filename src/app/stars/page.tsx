@@ -1,44 +1,13 @@
-import { client, urlForImage } from '@/lib/sanity';
-import { groq } from 'next-sanity';
-import { Metadata } from 'next';
-import { Project } from '@/types/sanity';
-import Stars from './Stars';
+// src/app/stars/page.tsx
+import type { Metadata } from 'next';
+import ExploreMode from '@/components/galaxy/explore/ExploreMode';
 
 export const metadata: Metadata = {
-	title: 'Godliness Dongorere - Projects',
-	description: 'Explore the portfolio of projects by Godliness Dongorere, showcasing our expertise in various software development fields.',
+  title: 'Explore the Milky Way',
+  description: 'Fly through a scaled model of the Milky Way: orbit, zoom, jump to the Sun, Sgr A* or the Magellanic Clouds, and take a guided tour.',
+  alternates: { canonical: '/stars' },
 };
 
-async function getProjectsData(): Promise<Project[]> {
-	const query = groq`
-	*[_type == "project"] | order(projectDate desc, _createdAt desc){
-	  _id,
-	  title,
-	  slug,
-	  tagline,
-	  mainImage,
-	  technologiesUsed,
-	  projectDate,
-	  'projectLink': projectLink,
-	}
-  `;
-	try {
-		const data = await client.fetch(query, {}, { next: { revalidate: 60 } });
-		const processedProjects = data.map((project: Project) => ({
-			...project,
-			imageUrl: project.mainImage ? urlForImage(project.mainImage).url() : undefined,
-		}));
-		return processedProjects;
-	} catch (error) {
-		console.error("Failed to fetch project data:", error);
-		return [];
-	}
-}
-
-export default async function Page() {
-	const projects = await getProjectsData();
-
-	return (
-		<Stars projects={projects} />
-	);
+export default function StarsPage() {
+  return <ExploreMode />;
 }

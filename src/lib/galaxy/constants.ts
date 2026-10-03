@@ -163,3 +163,12 @@ export const OLD_MIX: SpectralMix = { O: 0, B: 0, A: 0, F: 0.04, G: 0.11, K: 0.4
 /** Camera reference distance — the black hole size slider is in px at this distance. */
 export const CAMERA_REFERENCE_DISTANCE = ly(105_000);
 export const CAMERA_FOV = 50;
+
+/** Heliocentric (distance, galactic longitude l, latitude b) → scene coordinates (galactocentric). */
+export function fromSun(distance: number, l: number, b: number): { x: number; y: number; z: number } {
+	return {
+		x: GALAXY.sunRadius - distance * Math.cos(b) * Math.cos(l),
+		y: GALAXY.sunHeight + distance * Math.sin(b),
+		z: distance * Math.cos(b) * Math.sin(l),
+	};
+}
