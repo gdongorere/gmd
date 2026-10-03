@@ -1,92 +1,29 @@
 // src/app/page.tsx
-// This is a Server Component, no 'use client' directive
+import type { Metadata } from 'next';
+import HomePageClient from '@/components/HomePageClient';
+import { profile } from '@/data/profile';
 
-import { client, urlForImage } from '@/lib/sanity';
-import { groq } from 'next-sanity';
-import HomePageClient from '@/components/HomePageClient'; // Import the new client component
-import { Metadata } from 'next';
-import { Project, Service, SiteSettings } from '@/types/sanity'; // Import types from central types file
-import { Footer } from '@/components/Footer';
-
-// Removed local interface definitions for Project, Service, SiteSettings
-// They are now imported from '@/types/sanity' to ensure consistency.
-
-// Metadata for the homepage
 export const metadata: Metadata = {
-  title: 'Godliness Dongorere - Crafting Cutting-Edge Software Solutions',
-  description: 'Godliness Dongorere specializes in innovative software development, web applications, and digital transformation. Explore some of my projects.',
+  title: { absolute: `${profile.name} · Full-stack developer` },
+  description: `${profile.tagline} Explore projects, experience and an explorable 3D Milky Way.`,
+  alternates: { canonical: '/' },
 };
 
-// Function to fetch all necessary data on the server
-async function getHomePageData(): Promise<{
-  projects: Project[];
-  services: Service[];
-  siteSettings: SiteSettings;
-}> {
-  const query = groq`
-    {
-      "projects": *[_type == "project"] | order(projectDate desc, _createdAt desc) [0...3]{
-        _id,
-        title,
-        slug,
-        tagline,
-        mainImage,
-        technologiesUsed,
-        projectDate
-      },
-      "services": *[_type == "service"] | order(title asc){
-        _id,
-        title,
-        description,
-        slug,
-        icon
-        // If you want duration, price, and category, ensure they are in your service.ts schema:
-        // duration,
-        // price,
-        // category->{_id, title}
-      },
-      "siteSettings": *[_type == "siteSettings"][0]{ title, description, coverImage, logo }
-    }
-  `;
-
-  // Added { next: { revalidate: 60 } } for ISR
-  const data = await client.fetch(query, {}, { next: { revalidate: 60 } });
-
-  // Ensure siteSettings is an object, even if null from Sanity
-  const siteSettings = data.siteSettings || {};
-
-  // Process projects to include imageUrl
-  const processedProjects = data.projects.map((project: Project) => ({
-    ...project,
-    imageUrl: project.mainImage ? urlForImage(project.mainImage).url() : undefined,
-  }));
-
-  // Process services to include imageUrl
-  const processedServices = data.services.map((service: Service) => ({
-    ...service,
-    imageUrl: service.icon ? urlForImage(service.icon).url() : undefined,
-  }));
-
-  return {
-    projects: processedProjects,
-    services: processedServices,
-    siteSettings: {
-      ...siteSettings,
-      coverImageUrl: siteSettings.coverImage ? urlForImage(siteSettings.coverImage).url() : undefined,
-      logoUrl: siteSettings.logo ? urlForImage(siteSettings.logo).url() : undefined,
-    },
+export default function Page() {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: profile.name,
+    jobTitle: profile.title,
+    url: profile.siteUrl,
+    email: `mailto:${profile.email}`,
+    address: { '@type': 'PostalAddress', addressCountry: profile.location },
+    sameAs: [profile.github.url, profile.linkedin.url],
   };
-}
-
-// Server component to fetch data and pass it to the client component
-export default async function Page() {
-  const { projects, services, siteSettings } = await getHomePageData();
-
   return (
-    <HomePageClient
-    //projects={projects}
-    //services={services}
-    //siteSettings={siteSettings}
-    />
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
+      <HomePageClient />
+    </>
   );
 }

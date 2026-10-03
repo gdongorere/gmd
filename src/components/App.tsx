@@ -1,9 +1,12 @@
 // src/components/App.tsx
 "use client";
 import React, { useRef, useEffect, useState, useCallback } from "react";
-import { Box, VStack, Button, Text, useBreakpointValue, Spinner, Center } from "@chakra-ui/react"; // Import Spinner and Center
+import { Box, Button, ButtonGroup, Center, HStack, IconButton, Progress, Stack, Text, useBreakpointValue, VisuallyHidden } from "@chakra-ui/react";
+import { FiArrowDown, FiArrowLeft, FiArrowRight, FiArrowUp, FiChevronDown, FiChevronUp } from "react-icons/fi";
+import { detectDevice } from "@/lib/galaxy/quality";
+import { tierIndex } from "@/lib/galaxy/tiers";
 import * as THREE from "three";
-import * as CANNON from "cannon";
+import * as CANNON from "cannon-es";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 
@@ -77,6 +80,10 @@ export default function App() {
     const [showColliders, setShowColliders] = useState(false); // Set to true by default to see them initially
     // NEW: Loading state for spinner
     const [isLoading, setIsLoading] = useState(true); // Initial state set to true
+    // 0–1 while a model downloads; null when unknown or idle.
+    const [loadProgress, setLoadProgress] = useState<number | null>(null);
+    // Collider overlay is a developer aid: only reachable with ?debug=1.
+    const [debugTools] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debug"));
 
     // Animation frame ID for cleanup
     const animationFrameId = useRef<number | null>(null);
@@ -112,7 +119,7 @@ export default function App() {
         // NEW: Clear previous dynamic collision bodies and their visual meshes
         if (dynamicCollisionObjectsRef.current.length > 0) {
             dynamicCollisionObjectsRef.current.forEach(({ body, mesh }) => {
-                world.remove(body);
+                world.removeBody(body);
                 scene.remove(mesh);
                 mesh.geometry.dispose();
                 (mesh.material as THREE.Material).dispose();
@@ -126,7 +133,10 @@ export default function App() {
         console.log(`loadModel: Loading GLTF from: "${modelPath}"`);
 
         try {
-            const gltf = await loader.loadAsync(modelPath);
+            setLoadProgress(0);
+            const gltf = await loader.loadAsync(modelPath, (event) => {
+                if (event.lengthComputable && event.total > 0) setLoadProgress(event.loaded / event.total);
+            });
             const model = gltf.scene;
 
             // Apply scaling for a 1:1 mapping (1 Blender unit = 1 Three.js unit)
@@ -216,6 +226,7 @@ export default function App() {
         } catch (error) {
             console.error("loadModel: Error loading GLTF model:", error);
         } finally {
+            setLoadProgress(null);
             setIsLoading(false); // Set loading to false after model is loaded or an error occurs
         }
     }, [showColliders]); // Add showColliders to dependencies
@@ -253,10 +264,13 @@ export default function App() {
         scene.add(yaw.current); // Add yaw object to scene, which contains pitch and camera
 
         // Renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        // Match rendering cost to the device: weak GPUs get no antialiasing and a 1x pixel ratio.
+        const deviceTier = detectDevice().ceiling;
+        const weak = deviceTier === "static" || tierIndex(deviceTier) <= tierIndex("low");
+        const renderer = new THREE.WebGLRenderer({ antialias: !weak, powerPreference: weak ? "default" : "high-performance" });
         rendererRef.current = renderer;
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(weak ? 1 : Math.min(window.devicePixelRatio, deviceTier === "medium" ? 1.5 : 2));
         renderer.shadowMap.enabled = true; // Keep shadow map enabled for future use with other lights if needed
         renderer.toneMapping = THREE.ACESFilmicToneMapping; // Recommended for HDR
         renderer.toneMappingExposure = 1.2; // Adjust exposure as needed
@@ -746,7 +760,7 @@ export default function App() {
             }
 
             if (world && groundBodyRef.current) {
-                world.remove(groundBodyRef.current);
+                world.removeBody(groundBodyRef.current);
             }
 
             // NEW: Cleanup for player visual mesh
@@ -763,7 +777,7 @@ export default function App() {
             // NEW: Cleanup for dynamic collision objects (model colliders)
             if (dynamicCollisionObjectsRef.current.length > 0) {
                 dynamicCollisionObjectsRef.current.forEach(({ body, mesh }) => {
-                    worldRef.current?.remove(body);
+                    worldRef.current?.removeBody(body);
                     // Use the captured sceneForCleanup
                     if (sceneForCleanup && mesh) {
                         sceneForCleanup.remove(mesh);
@@ -777,7 +791,7 @@ export default function App() {
             // NEW: Cleanup for static collision objects (walls, etc.)
             if (staticCollisionObjectsRef.current.length > 0) {
                 staticCollisionObjectsRef.current.forEach(({ body, mesh }) => {
-                    worldRef.current?.remove(body);
+                    worldRef.current?.removeBody(body);
                     // Use the captured sceneForCleanup
                     if (sceneForCleanup && mesh) {
                         sceneForCleanup.remove(mesh);
@@ -976,167 +990,103 @@ export default function App() {
         };
     }, [modelList]);
 
+    const hold = (flags: { current: boolean }[], on: boolean) => () => {
+        flags.forEach((f) => { f.current = on; });
+    };
+    // Pointer events cover touch, pen and mouse, and keep working if the finger slides off the button.
+    const pad = (label: string, icon: React.ReactElement, onDown: () => void, onUp: () => void) => (
+        <IconButton
+            aria-label={label}
+            icon={icon}
+            variant="glass"
+            boxSize="56px"
+            borderRadius="full"
+            isDisabled={isLoading}
+            sx={{ touchAction: "none", userSelect: "none", WebkitTouchCallout: "none" }}
+            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); onDown(); }}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+            onPointerLeave={onUp}
+            onContextMenu={(e) => e.preventDefault()}
+        />
+    );
+    const look = (axis: "x" | "y", value: number) => () => { lookDelta.current[axis] = value; };
+
     return (
-        <Box ref={mountRef} h="100vh" w="100vw" overflow="hidden" position="relative">
-            {/* Conditional Spinner Overlay */}
+        <Box ref={mountRef} h="100dvh" w="100vw" overflow="hidden" position="relative" sx={{ touchAction: "none" }}>
+            {/* Loading overlay with real progress */}
             {isLoading && (
-                <Center
-                    position="absolute"
-                    top="0"
-                    left="0"
-                    right="0"
-                    bottom="0"
-                    bg="rgba(0, 0, 0, 0.7)" // Semi-transparent black background
-                    zIndex="overlay" // Chakra UI's zIndex for overlays
-                >
-                    <Spinner
-                        thickness="4px"
-                        speed="0.65s"
-                        emptyColor="gray.200"
-                        color="blue.500"
-                        size="xl"
-                    />
+                <Center position="absolute" inset={0} bg="rgba(10,10,10,0.82)" zIndex="overlay" role="status" aria-live="polite">
+                    <Stack spacing={4} w="min(320px, 80vw)" textAlign="center">
+                        <Text fontFamily="heading" fontSize="xl" fontWeight={700}>Preparing the house…</Text>
+                        <Progress
+                            value={loadProgress === null ? undefined : Math.round(loadProgress * 100)}
+                            isIndeterminate={loadProgress === null}
+                            size="sm"
+                            borderRadius="full"
+                            colorScheme="orange"
+                            bg="whiteAlpha.200"
+                            aria-label="Loading progress"
+                        />
+                        <Text fontSize="sm" color="content.secondary">
+                            {loadProgress === null ? "Loading scene" : `${Math.round(loadProgress * 100)}% of the model downloaded`}
+                        </Text>
+                    </Stack>
                 </Center>
             )}
 
-            {/* UI for model selection and collision toggle */}
-            <VStack
-                position="absolute"
-                top="1rem"
-                left="1rem"
-                zIndex="tooltip"
-                spacing={2}
-                align="flex-start"
-            >
-                {/* NEW: Collision visibility toggle button */}
-                <Button
-                    onClick={() => setShowColliders(prev => !prev)}
-                    colorScheme={showColliders ? "red" : "gray"}
-                    variant="outline"
-                    size="sm"
-                >
-                    {showColliders ? "Hide Colliders" : "Show Colliders"}
-                </Button>
-
-                <Text fontSize="sm" color="white" mt={4}>Select Model:</Text>
-                {modelList.map((modelName, index) => (
-                    <Button
-                        key={modelName}
-                        onClick={() => setSelectedModelIndex(index)}
-                        colorScheme={selectedModelIndex === index ? "brand" : "gray"}
-                        variant={selectedModelIndex === index ? "solid" : "outline"}
-                        size="sm"
-                        isDisabled={isLoading} // Disable buttons while loading
-                    >
-                        {modelName.replace(".glb", "")}
+            {/* Top-left: model picker (and developer tools with ?debug=1) */}
+            <Stack position="absolute" top={{ base: "76px", md: "80px" }} left={3} zIndex="tooltip" spacing={2} align="flex-start" maxW="calc(100vw - 24px)">
+                {modelList.length > 1 && (
+                    <Box role="group" aria-label="Choose a house">
+                        <Text fontSize="xs" color="content.secondary" mb={1}>House</Text>
+                        <ButtonGroup size="sm" isAttached variant="outline" flexWrap="wrap">
+                            {modelList.map((modelName, index) => (
+                                <Button
+                                    key={modelName}
+                                    aria-pressed={selectedModelIndex === index}
+                                    onClick={() => setSelectedModelIndex(index)}
+                                    isDisabled={isLoading}
+                                    bg={selectedModelIndex === index ? "accent.subtle" : "surface.glass"}
+                                    borderColor={selectedModelIndex === index ? "accent.fg" : "line.strong"}
+                                    backdropFilter="blur(8px)"
+                                >
+                                    {modelName.replace(".glb", "")}
+                                </Button>
+                            ))}
+                        </ButtonGroup>
+                    </Box>
+                )}
+                {debugTools && (
+                    <Button onClick={() => setShowColliders((prev) => !prev)} aria-pressed={showColliders} variant="glass" size="sm">
+                        {showColliders ? "Hide colliders" : "Show colliders"}
                     </Button>
-                ))}
-            </VStack>
+                )}
+            </Stack>
 
-            {/* Mobile Controls */}
-            {isControlsVisible && ( // Removed `isPortrait` condition here
+            {/* Desktop hint */}
+            {!isControlsVisible && !isLoading && (
+                <HStack position="absolute" bottom={5} left="50%" transform="translateX(-50%)" zIndex="tooltip" bg="surface.glass" border="1px solid" borderColor="line.subtle" borderRadius="full" px={5} py={2} backdropFilter="blur(10px)" pointerEvents="none" opacity={isPointerLocked ? 0.55 : 1} transition="opacity 200ms">
+                    <Text fontSize="sm" color="content.secondary">
+                        {isPointerLocked ? "Esc to release the mouse" : "Click the scene to look around · W A S D to walk"}
+                    </Text>
+                </HStack>
+            )}
+
+            {/* Touch controls: walk on the left, look on the right */}
+            {isControlsVisible && (
                 <>
-                    {/* Forward Button */}
-                    <Button
-                        position="absolute"
-                        bottom="10rem" // Adjust position as needed
-                        left="2rem"
-                        zIndex="10"
-                        size="lg"
-                        colorScheme="blue"
-                        onTouchStart={() => {
-                            console.log("Forward button touchStart: setting moveForward.current to true");
-                            moveForward.current = true;
-                            moveBackward.current = false; // Ensure only one is true
-                        }}
-                        onTouchEnd={() => {
-                            console.log("Forward button touchEnd: setting moveForward.current to false");
-                            moveForward.current = false;
-                        }}
-                        isDisabled={isLoading} // Disable buttons while loading
-                    >
-                        Forward
-                    </Button>
-
-                    {/* Backward Button */}
-                    <Button
-                        position="absolute"
-                        bottom="2rem" // Adjust position as needed
-                        left="2rem"
-                        zIndex="10"
-                        size="lg"
-                        colorScheme="blue"
-                        onTouchStart={() => {
-                            console.log("Backward button touchStart: setting moveBackward.current to true");
-                            moveBackward.current = true;
-                            moveForward.current = false; // Ensure only one is true
-                        }}
-                        onTouchEnd={() => {
-                            console.log("Backward button touchEnd: setting moveBackward.current to false");
-                            moveBackward.current = false;
-                        }}
-                        isDisabled={isLoading} // Disable buttons while loading
-                    >
-                        Backward
-                    </Button>
-
-                    {/* D-pad style buttons for Looking Around */}
-                    {/* Positioned for a cross layout */}
-                    <Button
-                        position="absolute"
-                        bottom="8rem" // Up
-                        right="5rem"
-                        zIndex="10"
-                        size="md" // Adjusted size
-                        colorScheme="teal"
-                        onTouchStart={() => { lookDelta.current.y = -1; }} // Flipped: Look Up button now looks Down
-                        onTouchEnd={() => { lookDelta.current.y = 0; }}
-                        isDisabled={isLoading}
-                    >
-                        ↑
-                    </Button>
-                    <Button
-                        position="absolute"
-                        bottom="2rem" // Down
-                        right="5rem"
-                        zIndex="10"
-                        size="md" // Adjusted size
-                        colorScheme="teal"
-                        onTouchStart={() => { lookDelta.current.y = 1; }} // Flipped: Look Down button now looks Up
-                        onTouchEnd={() => { lookDelta.current.y = 0; }}
-                        isDisabled={isLoading}
-                    >
-                        ↓
-                    </Button>
-                    <Button
-                        position="absolute"
-                        bottom="5rem" // Left
-                        right="8.5rem" // Adjusted for D-pad alignment
-                        zIndex="10"
-                        size="md" // Adjusted size
-                        colorScheme="teal"
-                        onTouchStart={() => { lookDelta.current.x = -1; }} // Flipped: Look Left button now looks Right
-                        onTouchEnd={() => { lookDelta.current.x = 0; }}
-                        isDisabled={isLoading}
-                    >
-                        ←
-                    </Button>
-                    <Button
-                        position="absolute"
-                        bottom="5rem" // Right
-                        right="1.5rem" // Adjusted for D-pad alignment
-                        zIndex="10"
-                        size="md" // Adjusted size
-                        colorScheme="teal"
-                        onTouchStart={() => { lookDelta.current.x = 1; }} // Flipped: Look Right button now looks Left
-                        onTouchEnd={() => { lookDelta.current.x = 0; }}
-                        isDisabled={isLoading}
-                    >
-                        →
-                    </Button>
-
-                    {/* Removed Full-screen Look Area */}
-                    {/* The Box that handled touch-based dragging for looking around is removed */}
+                    <VisuallyHidden>Touch controls: hold the buttons to walk or look around.</VisuallyHidden>
+                    <Stack position="absolute" left={4} bottom="calc(24px + env(safe-area-inset-bottom))" zIndex="10" spacing={3}>
+                        {pad("Walk forward", <FiChevronUp size={26} />, () => { moveForward.current = true; moveBackward.current = false; }, hold([moveForward], false))}
+                        {pad("Walk backward", <FiChevronDown size={26} />, () => { moveBackward.current = true; moveForward.current = false; }, hold([moveBackward], false))}
+                    </Stack>
+                    <Box position="absolute" right={4} bottom="calc(24px + env(safe-area-inset-bottom))" zIndex="10" w="184px" h="184px">
+                        <Box position="absolute" top={0} left="64px">{pad("Look up", <FiArrowUp size={22} />, look("y", -1), look("y", 0))}</Box>
+                        <Box position="absolute" bottom={0} left="64px">{pad("Look down", <FiArrowDown size={22} />, look("y", 1), look("y", 0))}</Box>
+                        <Box position="absolute" top="64px" left={0}>{pad("Look left", <FiArrowLeft size={22} />, look("x", -1), look("x", 0))}</Box>
+                        <Box position="absolute" top="64px" right={0}>{pad("Look right", <FiArrowRight size={22} />, look("x", 1), look("x", 0))}</Box>
+                    </Box>
                 </>
             )}
         </Box>

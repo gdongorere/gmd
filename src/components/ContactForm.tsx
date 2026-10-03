@@ -1,201 +1,160 @@
 // src/components/ContactForm.tsx
-'use client'; // This directive makes it a Client Component
+'use client';
 
-import React, { useState, FormEvent } from 'react';
+import React, { useRef, useState } from 'react';
 import {
-  Box,
-  FormControl,
-  FormLabel,
-  Input,
-  Textarea,
-  Button,
-  useToast,
-  VStack,
-  Heading,
-  Text,
-  useColorModeValue, // Keep for potential light mode adjustments
-  useTheme, // Import useTheme to access custom colors
+  Alert, AlertDescription, AlertIcon, AlertTitle, Box, Button, FormControl, FormErrorMessage, FormHelperText, FormLabel, Heading, Input,
+  Stack, Text, Textarea,
 } from '@chakra-ui/react';
+import { FiCheckCircle, FiSend } from 'react-icons/fi';
+import {
+  CONTACT_LIMITS, validateContact, validateField, type ContactErrors, type ContactField, type ContactInput,
+} from '@/lib/contactSchema';
+import { GlassCard } from '@/components/ui';
 
-interface FormData {
-  name: string;
-  email: string;
-  phone?: string; // Optional
-  subject: string;
-  message: string;
-}
+type Status = 'idle' | 'sending' | 'sent' | 'error';
+const EMPTY: ContactInput = { name: '', email: '', phone: '', subject: '', message: '' };
+const ORDER: ContactField[] = ['name', 'email', 'phone', 'subject', 'message'];
 
 export default function ContactForm() {
-  const toast = useToast();
-  const theme = useTheme(); // Access the theme to get custom colors
-  const [formData, setFormData] = useState<FormData>({
-    name: '',
-    email: '',
-    phone: '',
-    subject: '',
-    message: '',
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const [values, setValues] = useState<ContactInput>(EMPTY);
+  const [errors, setErrors] = useState<ContactErrors>({});
+  const [touched, setTouched] = useState<Partial<Record<ContactField, boolean>>>({});
+  const [status, setStatus] = useState<Status>('idle');
+  const [serverMessage, setServerMessage] = useState('');
+  const [honeypot, setHoneypot] = useState('');
+  const formRef = useRef<HTMLFormElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  const change = (field: ContactField) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setValues((v) => ({ ...v, [field]: value }));
+    // Once a field has been visited, re-validate as the visitor fixes it.
+    if (touched[field]) setErrors((errs) => ({ ...errs, [field]: validateField(field, value) }));
+  };
+  const blur = (field: ContactField) => () => {
+    setTouched((t) => ({ ...t, [field]: true }));
+    setErrors((errs) => ({ ...errs, [field]: validateField(field, values[field]) }));
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setIsLoading(true);
-
-    // Basic client-side validation
-    if (!formData.name || !formData.email || !formData.subject || !formData.message) {
-      toast({
-        title: 'Validation Error',
-        description: 'Please fill in all required fields (Name, Email, Subject, Message).',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-      setIsLoading(false);
+    if (status === 'sending') return;
+    const result = validateContact(values);
+    setTouched({ name: true, email: true, phone: true, subject: true, message: true });
+    setErrors(result.errors);
+    if (!result.ok) {
+      const first = ORDER.find((f) => result.errors[f]);
+      if (first) formRef.current?.querySelector<HTMLElement>(`[name="${first}"]`)?.focus();
       return;
     }
 
+    setStatus('sending');
+    setServerMessage('');
     try {
       const response = await fetch('/api/contact', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...result.data, website: honeypot }),
       });
-
+      const body = (await response.json().catch(() => ({}))) as { message?: string; errors?: ContactErrors };
       if (response.ok) {
-        toast({
-          title: 'Message Sent!',
-          description: 'Your message has been successfully sent. We will get back to you shortly.',
-          status: 'success',
-          duration: 5000,
-          isClosable: true,
-        });
-        // Clear the form
-        setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
-      } else {
-        const errorData = await response.json();
-        toast({
-          title: 'Error Sending Message',
-          description: errorData.message || 'Something went wrong. Please try again later.',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        });
+        setStatus('sent');
+        setValues(EMPTY);
+        setTouched({});
+        setErrors({});
+        // Move focus to the confirmation so screen-reader users hear it.
+        window.setTimeout(() => headingRef.current?.focus(), 50);
+        return;
       }
-    } catch (error) {
-      console.error('Network or unexpected error:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to connect to the server. Please check your internet connection.',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-    } finally {
-      setIsLoading(false);
+      if (body.errors) setErrors(body.errors);
+      setServerMessage(body.message ?? 'Something went wrong. Please try again.');
+      setStatus('error');
+    } catch {
+      setServerMessage('I couldn’t reach the server. Check your connection and try again, or email me directly.');
+      setStatus('error');
     }
   };
 
-  // Use theme colors directly for dark mode, or use useColorModeValue for light mode compatibility
-  const formBg = theme.colors.neutral.dark['bg-card'];
-  const borderColor = theme.colors.neutral.dark['border-color'];
-  const headingColor = theme.colors.neutral.dark['text-primary'];
-  const textColor = theme.colors.neutral.dark['text-secondary'];
+  if (status === 'sent') {
+    return (
+      <GlassCard strong p={{ base: 6, md: 10 }} textAlign="center" role="status">
+        <Stack spacing={5} align="center">
+          <Box as={FiCheckCircle} boxSize={12} color="green.300" aria-hidden="true" />
+          <Heading as="h2" size="xl" ref={headingRef} tabIndex={-1} _focus={{ outline: 'none' }}>Message sent</Heading>
+          <Text color="content.secondary" fontSize="lg" maxW="md">
+            Thanks for reaching out. I’ll reply within two business days.
+          </Text>
+          <Button variant="outline" onClick={() => setStatus('idle')}>Send another message</Button>
+        </Stack>
+      </GlassCard>
+    );
+  }
+
+  const messageLength = values.message.trim().length;
+  const errorList = ORDER.filter((f) => errors[f]);
 
   return (
-    <Box
-      as="form"
-      onSubmit={handleSubmit}
-      p={8}
-      borderRadius="lg"
-      boxShadow="lg"
-      bg={formBg}
-      borderWidth="1px"
-      borderColor={borderColor}
-      maxWidth="600px"
-      mx="auto"
-      my={10}
-    >
-      <VStack spacing={6} align="stretch">
-        <Heading as="h2" size="xl" textAlign="center" color={headingColor} mb={2}>
-          Get in Touch
-        </Heading>
-        <Text textAlign="center" color={textColor} fontSize="md">
-          Have a question about our services or a project idea? Send us a message!
-        </Text>
+    <GlassCard strong p={{ base: 6, md: 8 }} as="form" ref={formRef} onSubmit={submit} noValidate aria-labelledby="contact-form-title">
+      <Stack spacing={5}>
+        <Heading as="h2" id="contact-form-title" size="lg">Send a message</Heading>
 
-        <FormControl id="name" isRequired>
-          <FormLabel color={textColor}>Your Name</FormLabel>
-          <Input
-            type="text"
-            name="name"
-            value={formData.name}
-            onChange={handleChange}
-            placeholder="John Doe"
-          />
+        {(status === 'error' || (errorList.length > 1 && status !== 'sending' && Object.values(touched).every(Boolean))) && (
+          <Alert status="error" variant="left-accent" borderRadius="lg" bg="rgba(229, 62, 62, 0.14)" role="alert" alignItems="flex-start">
+            <AlertIcon />
+            <Box>
+              <AlertTitle>{status === 'error' && serverMessage ? 'Your message wasn’t sent' : 'Please fix the highlighted fields'}</AlertTitle>
+              {serverMessage && <AlertDescription>{serverMessage}</AlertDescription>}
+            </Box>
+          </Alert>
+        )}
+
+        <FormControl isRequired isInvalid={!!errors.name}>
+          <FormLabel>Your name</FormLabel>
+          <Input name="name" value={values.name} onChange={change('name')} onBlur={blur('name')} autoComplete="name" maxLength={CONTACT_LIMITS.name.max + 20} />
+          <FormErrorMessage>{errors.name}</FormErrorMessage>
         </FormControl>
 
-        <FormControl id="email" isRequired>
-          <FormLabel color={textColor}>Your Email</FormLabel>
-          <Input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            placeholder="john.doe@example.com"
-          />
+        <FormControl isRequired isInvalid={!!errors.email}>
+          <FormLabel>Email</FormLabel>
+          <Input type="email" name="email" value={values.email} onChange={change('email')} onBlur={blur('email')} autoComplete="email" inputMode="email" placeholder="you@example.com" />
+          <FormErrorMessage>{errors.email}</FormErrorMessage>
         </FormControl>
 
-        <FormControl id="phone">
-          <FormLabel color={textColor}>Phone Number (Optional)</FormLabel>
-          <Input
-            type="tel"
-            name="phone"
-            value={formData.phone}
-            onChange={handleChange}
-            placeholder="e.g., +123 456 7890"
-          />
+        <FormControl isInvalid={!!errors.phone}>
+          <FormLabel>Phone <Text as="span" color="content.muted" fontWeight={400}>(optional)</Text></FormLabel>
+          <Input type="tel" name="phone" value={values.phone ?? ''} onChange={change('phone')} onBlur={blur('phone')} autoComplete="tel" inputMode="tel" />
+          <FormErrorMessage>{errors.phone}</FormErrorMessage>
         </FormControl>
 
-        <FormControl id="subject" isRequired>
-          <FormLabel color={textColor}>Subject</FormLabel>
-          <Input
-            type="text"
-            name="subject"
-            value={formData.subject}
-            onChange={handleChange}
-            placeholder="Inquiry about software development"
-          />
+        <FormControl isRequired isInvalid={!!errors.subject}>
+          <FormLabel>Subject</FormLabel>
+          <Input name="subject" value={values.subject} onChange={change('subject')} onBlur={blur('subject')} autoComplete="off" />
+          <FormErrorMessage>{errors.subject}</FormErrorMessage>
         </FormControl>
 
-        <FormControl id="message" isRequired>
-          <FormLabel color={textColor}>Message</FormLabel>
-          <Textarea
-            name="message"
-            value={formData.message}
-            onChange={handleChange}
-            placeholder="Type your message here..."
-            rows={6}
-          />
+        <FormControl isRequired isInvalid={!!errors.message}>
+          <FormLabel>Message</FormLabel>
+          <Textarea name="message" rows={6} value={values.message} onChange={change('message')} onBlur={blur('message')} autoComplete="off" resize="vertical" />
+          {errors.message ? (
+            <FormErrorMessage>{errors.message}</FormErrorMessage>
+          ) : (
+            <FormHelperText color="content.muted">{messageLength} / {CONTACT_LIMITS.message.max}</FormHelperText>
+          )}
         </FormControl>
 
-        <Button
-          type="submit"
-          colorScheme="brand"
-          size="lg"
-          isLoading={isLoading}
-          loadingText="Sending..."
-          alignSelf="center"
-          width={{ base: '100%', md: '50%' }}
-        >
-          Send Message
+        {/* Honeypot: invisible to people and assistive tech; bots fill it in. */}
+        <Box aria-hidden="true" position="absolute" left="-10000px" top="auto" w="1px" h="1px" overflow="hidden">
+          <label>
+            Leave this field empty
+            <input type="text" name="website" tabIndex={-1} autoComplete="off" value={honeypot} onChange={(e) => setHoneypot(e.target.value)} />
+          </label>
+        </Box>
+
+        <Button type="submit" size="lg" isLoading={status === 'sending'} loadingText="Sending…" leftIcon={<FiSend aria-hidden="true" />} alignSelf={{ base: 'stretch', md: 'flex-start' }}>
+          Send message
         </Button>
-      </VStack>
-    </Box>
+      </Stack>
+    </GlassCard>
   );
 }
