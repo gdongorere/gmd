@@ -1,27 +1,14 @@
 // src/app/contact/page.tsx
-'use client'; // This directive makes it a Client Component
+import type { Metadata } from 'next';
+import ContactPageContent from '@/components/ContactPageContent';
+import { profile } from '@/data/profile';
 
-import ContactForm from '../../components/ContactForm'; // Adjust path as necessary
-import { Box, Container, Flex, useColorModeValue, useTheme } from '@chakra-ui/react'; // Import useTheme
+export const metadata: Metadata = {
+  title: 'Contact',
+  description: `Get in touch with ${profile.name} about a project, a role or a question. Replies within two business days.`,
+  alternates: { canonical: '/contact' },
+};
 
 export default function ContactPage() {
-  const theme = useTheme(); // Initialize useTheme hook
-
-  // Use theme colors for background and text
-  const bgColor = theme.colors.neutral.dark['bg-primary']; // Use dark primary background
-  const headingColor = theme.colors.neutral.dark['text-primary']; // Use dark primary text color
-
-  return (
-    <Flex
-      minH="100vh"
-      align="center"
-      justify="center"
-      bg={bgColor}
-      py={10}
-    >
-      <Container maxW="container.md">
-        <ContactForm />
-      </Container>
-    </Flex>
-  );
+  return <ContactPageContent />;
 }

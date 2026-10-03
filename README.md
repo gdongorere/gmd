@@ -1,29 +1,57 @@
-# gmd
+# Godliness Dongorere — portfolio
 
-Up in the clouds, me and my spouse
-Rumors on the ground gettin' too loud
-Please turn them shits down, can't hear myself think
-Turbulence, shit, almost spilled my drink
-In the White House with a mink
-Running through that bitch like it's my house
-All up in the hall like a mall
+A Next.js portfolio with a scientifically grounded, scaled-down 3D model of the Milky Way as its living background.
 
-Told you motherfuckers, all I do is ball
-No, I don't 'member you, I don't intend to
-Empty my memory bank
-It's a million dollars in it, baby, Hilary Swank
-Sittin' next to Hillary smellin' like dank
-Presidential pardon, name one nigga out there harder than him
-I'll wait
+- **Stack:** Next.js 15 (App Router), React 18, TypeScript, Chakra UI, framer-motion, three.js, Sanity (contact messages).
+- **Highlights:** WebGL galaxy with adaptive quality tiers, scroll-driven camera waypoints, an explorable `/stars` page, case-study pages for every project, and a walkable 3D house viewer.
 
-I've been in my wave like 20 years straight
-I've been on my vibe like 20 years straight
-Don't fuck up my high, fuck up my high
-Nights like this, I could fuck up a pie
-An still be straight (still be straight)
-Fall back, bitch, I got a lot on my plate
-Don't waste my breath
-I don't know how many moons a nigga got left
-Back to this joint, smokin' this shit like I'm tryna' prove a point
-I'm the highest, the highest title, numero uno
-Kill my vibe, that's your motherfuckin' funeral
+## Getting started
+
+```bash
+npm install
+cp .env.example .env.local   # fill in the Sanity values
+npm run dev                  # http://localhost:3000
+```
+
+### Environment variables
+
+| Variable | Where | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SANITY_PROJECT_ID` | client + server | Sanity project |
+| `NEXT_PUBLIC_SANITY_DATASET` | client + server | Dataset (default `production`) |
+| `NEXT_PUBLIC_SANITY_API_VERSION` | client + server | API version |
+| `SANITY_API_WRITE_TOKEN` | **server only** | Lets `/api/contact` store messages. Never prefix it with `NEXT_PUBLIC_`. |
+| `NEXT_PUBLIC_SITE_URL` | client + server | Canonical URL for metadata, sitemap and share cards |
+
+## Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Development server |
+| `npm run build` / `npm start` | Production build and server |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | TypeScript without emitting |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:e2e` | Browser tests: smoke, accessibility (Playwright + axe) |
+
+## Project layout
+
+```
+src/app/                 routes (home, /projects, /projects/[slug], /contact, /stars, /house-viewer, /api/contact)
+src/components/          UI: nav, footer, home sections, project cards, contact form
+src/components/ui/       design-system building blocks (GlassCard, Section, ...)
+src/components/galaxy/   galaxy canvas, waypoints, explore mode
+src/lib/galaxy/          galaxy model, shaders, quality governor, camera views
+src/data/                profile and project content
+docs/                    design notes, UX plans, archived drafts
+```
+
+## The galaxy
+
+See [`docs/milky-way-starfield.md`](docs/milky-way-starfield.md) for the model, the real-world constants, the quality tiers and how to test weak devices (`?quality=low`).
+
+## Content and security notes
+
+- Project content lives in `src/data/projectsData.ts`; personal details in `src/data/profile.ts`.
+- `/api/contact` accepts new messages only (validated, rate-limited, honeypot-protected). Stored messages are read in Sanity Studio.
+- The Sanity write client is in `src/lib/sanity.server.ts` and is server-only.

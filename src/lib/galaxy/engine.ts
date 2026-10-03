@@ -8,8 +8,9 @@ import {
 	Points, Scene, ShaderMaterial, ShaderMaterialParameters, Vector3, WebGLRenderer,
 } from 'three';
 import type { StarfieldConfig, StarfieldStats } from '@/contexts/StarfieldContext';
-import { CAMERA_FOV, CAMERA_REFERENCE_DISTANCE, GALAXY } from './constants';
-import { CameraPose, damp, easeInOut, poseAt } from './camera';
+import { CAMERA_FOV, CAMERA_REFERENCE_DISTANCE, GALAXY, LY_PER_UNIT } from './constants';
+import { CameraPose, DEFAULT_PATH, VIEWS, clonePose, damp, dampPose, newPose, poseAlong, poseBetween, smootherstep } from './camera';
+import { galaxyBus, type GalaxyApi, type WaypointEntry } from './bus';
 import { GalaxyData, LAYER_NAMES, LayerName, generateGalaxy } from './generate';
 import { DeviceProfile, QualityGovernor, RESOLUTION_STEPS, loadSettledTier } from './quality';
 import { BLACK_HOLE_FRAGMENT, BLACK_HOLE_VERTEX, GLOW_FRAGMENT, GLOW_VERTEX, POINT_FRAGMENT, POINT_VERTEX } from './shaders';
@@ -242,13 +243,26 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 	scene.add(blackHole);
 
 	// --- Runtime state -------------------------------------------------------------
-	let reducedMotion = profile.reducedMotion;
+	let osReducedMotion = profile.reducedMotion;
+	let reducedMotion = osReducedMotion && !config.overrideReducedMotion;
+	let pendingCapture: ((blob: Blob | null) => void) | null = null;
 	let lowPower = profile.saveData;
 	let width = 1;
 	let height = 1;
 	let needsResize = true;
 	let scrollTarget = 0;
 	let scrollProgress = 0;
+	let scrollY = window.scrollY;
+	let viewportH = window.innerHeight;
+	let lastScrollAt = 0;
+	let dimNow = 0;
+	let elapsedMyr = 0;
+	let cameraSettled = true;
+	let waypointVersion = -1;
+	let sortedWaypoints: WaypointEntry[] = [];
+	let sortedPoses: CameraPose[] = [];
+	const defaultPoses = DEFAULT_PATH.map((name) => VIEWS[name]);
+	let poseReady = false;
 	const pointerTarget = { x: 0, y: 0 };
 	const pointer = { x: 0, y: 0 };
 	let lastInputAt = performance.now();
@@ -261,7 +275,8 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 	let lastStatsKey = '';
 	let readySent = false;
 	let regenerating = false;
-	const pose: CameraPose = { logDistance: 0, polar: 0, azimuth: 0, targetX: 0, targetY: 0, targetZ: 0 };
+	const pose = newPose();
+	const desired = newPose();
 	const target = new Vector3();
 	const position = new Vector3();
 	const up = new Vector3();
@@ -378,7 +393,9 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 		const doc = document.documentElement;
 		const max = doc.scrollHeight - window.innerHeight;
 		scrollTarget = max > 1 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-		lastInputAt = performance.now();
+		scrollY = window.scrollY;
+		viewportH = window.innerHeight;
+		lastScrollAt = lastInputAt = performance.now();
 	};
 	const onPointer = (event: PointerEvent) => {
 		pointerTarget.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -402,7 +419,8 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 	};
 	const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
 	const onMotionChange = () => {
-		reducedMotion = motionQuery.matches;
+		osReducedMotion = motionQuery.matches;
+		reducedMotion = osReducedMotion && !config.overrideReducedMotion;
 		applyQuality();
 	};
 	const onContextLostEvent = (event: Event) => {
@@ -441,24 +459,69 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 	const targetFps = (now: number) => {
 		const spec = TIERS[governor.state.tier];
 		let fps = lowPower ? Math.min(30, spec.targetFps) : spec.targetFps;
-		const idle = now - lastInputAt > 8000 && Math.abs(scrollProgress - scrollTarget) < 0.0005;
+		const idle = now - lastInputAt > 8000 && cameraSettled && !galaxyBus.explore?.active;
 		if (idle && reducedMotion) fps = 10;
 		else if (idle && tierIndex(governor.state.tier) <= tierIndex('low')) fps = 20;
 		return fps;
 	};
 
+	/** Where the camera wants to be: explore target, else the page's waypoints, else the default journey. */
+	const resolveDesiredPose = () => {
+		const explore = galaxyBus.explore;
+		if (explore?.active) {
+			Object.assign(desired, explore.target);
+			return;
+		}
+		if (!config.scrollCamera) {
+			Object.assign(desired, sortedWaypoints.length ? VIEWS[sortedWaypoints[0].view] : VIEWS['face-on']);
+			return;
+		}
+		if (waypointVersion !== galaxyBus.version) {
+			waypointVersion = galaxyBus.version;
+			sortedWaypoints = [...galaxyBus.waypoints.values()].sort((a, b) => a.y - b.y);
+			sortedPoses = sortedWaypoints.map((w) => VIEWS[w.view]);
+		}
+		if (sortedWaypoints.length === 0) {
+			poseAlong(defaultPoses, scrollProgress, desired);
+			return;
+		}
+		const centre = scrollY + viewportH * 0.5;
+		const first = sortedWaypoints[0];
+		const last = sortedWaypoints[sortedWaypoints.length - 1];
+		if (centre <= first.y) return void Object.assign(desired, sortedPoses[0]);
+		if (centre >= last.y) return void Object.assign(desired, sortedPoses[sortedPoses.length - 1]);
+		let i = 0;
+		while (i < sortedWaypoints.length - 2 && centre >= sortedWaypoints[i + 1].y) i++;
+		const span = Math.max(1, sortedWaypoints[i + 1].y - sortedWaypoints[i].y);
+		// Hold each view while its section is centred; the flight happens between sections.
+		const t = smootherstep(((centre - sortedWaypoints[i].y) / span - 0.2) / 0.6);
+		poseBetween(sortedPoses, i, t, desired);
+	};
+
 	const updateCamera = (dt: number) => {
-		scrollProgress = damp(scrollProgress, config.scrollCamera ? scrollTarget : 0, reducedMotion ? 12 : 5, dt);
+		scrollProgress = damp(scrollProgress, scrollTarget, 5, dt);
 		const parallax = reducedMotion ? 0 : config.parallax;
 		pointer.x = damp(pointer.x, pointerTarget.x, 3, dt);
 		pointer.y = damp(pointer.y, pointerTarget.y, 3, dt);
 
-		poseAt(scrollProgress, pose);
-		// Portrait screens: pull back so the disk fits, but never on the final "at the Sun" frame.
+		const exploring = !!galaxyBus.explore?.active;
+		resolveDesiredPose();
+		if (!poseReady) {
+			Object.assign(pose, desired);
+			poseReady = true;
+		} else {
+			const before = pose.logDistance + pose.polar + pose.azimuth + pose.targetX + pose.targetY + pose.targetZ + pose.roll;
+			dampPose(pose, desired, reducedMotion ? 14 : exploring ? 7 : 4.5, dt);
+			const after = pose.logDistance + pose.polar + pose.azimuth + pose.targetX + pose.targetY + pose.targetZ + pose.roll;
+			cameraSettled = Math.abs(after - before) < 1e-5;
+		}
+
+		// Portrait screens: pull back so the disk fits, but not for close-up views.
 		const aspect = width / height;
 		const fit = aspect < 1 ? Math.pow(1 / aspect, 0.55) : 1;
-		const nearSun = Math.min(1, Math.max(0, (scrollProgress - 0.66) / 0.34));
-		const distance = Math.exp(pose.logDistance) * (fit + (1 - fit) * nearSun);
+		const rawDistance = Math.exp(pose.logDistance);
+		const fitApplied = 1 + (fit - 1) * Math.min(1, Math.max(0, (rawDistance - 300) / 330));
+		const distance = rawDistance * fitApplied;
 		const polar = pose.polar + pointer.y * 0.05 * parallax;
 		const azimuth = pose.azimuth + pointer.x * 0.07 * parallax + (reducedMotion ? 0 : Math.sin(clock * 0.05) * 0.01);
 
@@ -469,9 +532,11 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 		const ca = Math.cos(azimuth);
 		position.set(sp * ca, cp, -sp * sa).multiplyScalar(distance).add(target);
 		up.set(-cp * ca, sp, cp * sa);
-		const roll = reducedMotion ? 0 : (config.scrollRoll * Math.PI / 180) * easeInOut(scrollProgress);
+		// Roll: views carry roll for a 360° budget; the setting scales it, phones get half, and
+		// reduced motion removes it. Explore mode keeps its own (usually zero) roll.
+		const rollScale = exploring ? 1 : reducedMotion ? 0 : (config.scrollRoll / 360) * (profile.mobile ? 0.5 : 1);
 		forward.subVectors(target, position).normalize();
-		up.applyAxisAngle(forward, roll);
+		up.applyAxisAngle(forward, pose.roll * rollScale);
 		camera.position.copy(position);
 		camera.up.copy(up);
 		camera.lookAt(target);
@@ -527,6 +592,10 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 
 	const frame = (now: number) => {
 		raf = requestAnimationFrame(frame);
+		if (galaxyBus.paused) {
+			lastRendered = 0;
+			return;
+		}
 		const interval = 1000 / targetFps(now);
 		const since = now - lastRendered;
 		if (lastRendered && since < interval - 2) return;
@@ -538,10 +607,20 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 
 		clock = (clock + dt) % 6283;
 		const orbitSeconds = Math.max(10, config.orbitMinutes * 60);
-		if (config.rotation) shared.uTime.value += dt * ((2 * Math.PI) / orbitSeconds) * (reducedMotion ? 0.1 : 1);
+		const explore = galaxyBus.explore;
+		const timeScale = explore?.active ? explore.timeScale : 1;
+		if (config.rotation) {
+			const step = dt * ((2 * Math.PI) / orbitSeconds) * (reducedMotion ? 0.1 : 1) * timeScale;
+			shared.uTime.value += step;
+			elapsedMyr += (step / (2 * Math.PI)) * 230; // one solar orbit ≈ 230 Myr
+		}
+		// Dim the galaxy for reading, but never on the hero or in explore mode.
+		const reading =
+			config.dimWhenReading && !explore?.active && scrollY > viewportH * 0.6 && now - lastScrollAt > 2500;
+		dimNow = damp(dimNow, Math.max(galaxyBus.dim * 0.6, reading ? 0.28 : 0), 2, dt);
 		shared.uClock.value = clock;
 		fade = Math.min(1, fade + dt / 1.2);
-		const eased = fade * fade * (3 - 2 * fade);
+		const eased = (fade * fade * (3 - 2 * fade)) * (1 - dimNow);
 
 		for (const name of LAYER_NAMES) {
 			const { object, style } = layers[name];
@@ -557,6 +636,12 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 		updateCamera(dt);
 		updateSunMarker();
 		renderer.render(scene, camera);
+		if (pendingCapture) {
+			// Must run in the same task as the render, while the drawing buffer is still valid.
+			const resolve = pendingCapture;
+			pendingCapture = null;
+			canvas.toBlob((blob) => resolve(blob), 'image/png');
+		}
 
 		if (!readySent) {
 			readySent = true;
@@ -570,6 +655,7 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 	// --- Public API -----------------------------------------------------------------
 	const setConfig = (next: StarfieldConfig) => {
 		config = next;
+		reducedMotion = osReducedMotion && !config.overrideReducedMotion;
 		syncTierWithConfig();
 		applyQuality();
 		applyBlackHole();
@@ -577,7 +663,25 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 
 	setConfig(config);
 	readScroll();
-	scrollProgress = config.scrollCamera ? scrollTarget : 0;
+	scrollProgress = scrollTarget;
+
+	const api: GalaxyApi = {
+		project(x, y, z) {
+			const distance = camera.position.distanceTo(projected.set(x, y, z));
+			projected.project(camera);
+			return {
+				x: (projected.x * 0.5 + 0.5) * width,
+				y: (-projected.y * 0.5 + 0.5) * height,
+				visible: projected.z < 1 && Math.abs(projected.x) < 1.15 && Math.abs(projected.y) < 1.15,
+				distance,
+			};
+		},
+		elapsedMyr: () => elapsedMyr,
+		cameraDistanceLy: () => camera.position.distanceTo(target) * LY_PER_UNIT,
+		pose: () => clonePose(pose),
+		capture: () => new Promise<Blob | null>((resolve) => { pendingCapture = resolve; }),
+	};
+	galaxyBus.attach(api);
 	raf = requestAnimationFrame(frame);
 
 	return {
@@ -585,6 +689,7 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 		dispose: () => {
 			disposed = true;
 			cancelAnimationFrame(raf);
+			galaxyBus.detach();
 			window.removeEventListener('scroll', readScroll);
 			window.removeEventListener('resize', onResize);
 			window.removeEventListener('pointermove', onPointer);

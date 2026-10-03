@@ -1,44 +1,33 @@
-import { client, urlForImage } from '@/lib/sanity';
-import { groq } from 'next-sanity';
-import { Metadata } from 'next';
-import { Project } from '@/types/sanity';
-import ProjectsPageClient from './ProjectsPageClient';
+// src/app/projects/page.tsx
+import { Suspense } from 'react';
+import type { Metadata } from 'next';
+import { Section } from '@/components/ui';
+import { ProjectsExplorer } from '@/components/ProjectsExplorer';
+import { projectsData } from '@/data/projectsData';
+import Loading from './loading';
 
 export const metadata: Metadata = {
-    title: 'Godliness Dongorere - Projects',
-    description: 'Explore the portfolio of projects by Godliness Dongorere, showcasing our expertise in various software development fields.',
+  title: 'Projects',
+  description: 'Case studies of full-stack, industrial and 3D projects: marketplaces, field-service systems, university platforms and more.',
+  alternates: { canonical: '/projects' },
 };
 
-async function getProjectsData(): Promise<Project[]> {
-    const query = groq`
-    *[_type == "project"] | order(projectDate desc, _createdAt desc){
-      _id,
-      title,
-      slug,
-      tagline,
-      mainImage,
-      technologiesUsed,
-      projectDate,
-      'projectLink': projectLink,
-    }
-  `;
-    try {
-        const data = await client.fetch(query, {}, { next: { revalidate: 60 } });
-        const processedProjects = data.map((project: Project) => ({
-            ...project,
-            imageUrl: project.mainImage ? urlForImage(project.mainImage).url() : undefined,
-        }));
-        return processedProjects;
-    } catch (error) {
-        console.error("Failed to fetch project data:", error);
-        return [];
-    }
-}
-
-export default async function Page() {
-    const projects = await getProjectsData();
-
-    return (
-        <ProjectsPageClient projects={projects} />
-    );
+export default function ProjectsPage() {
+  return (
+    <>
+      <Section
+        view="tilted"
+        headingLevel="h1"
+        eyebrow="Selected work"
+        title="Projects"
+        subtitle="Products I’ve designed and built, from offline-first marketplaces to PLC dashboards. Open any one for the full case study."
+        pb={{ base: 4, md: 8 }}
+      />
+      <Section view="arm-flyby" id="all-projects" aria-label="All projects" pt={{ base: 4, md: 8 }}>
+        <Suspense fallback={<Loading />}>
+          <ProjectsExplorer projects={projectsData} />
+        </Suspense>
+      </Section>
+    </>
+  );
 }
