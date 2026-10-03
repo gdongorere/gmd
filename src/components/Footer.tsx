@@ -46,7 +46,6 @@ export function Footer({ projects = [] }: { projects?: FooterProject[] }) {
             {navItems.map((item) => (
               <Link key={item.href} as={NextLink} href={item.href} {...linkProps}>{item.label}</Link>
             ))}
-            <Link as={NextLink} href="/stars" {...linkProps}>Explore the Milky Way</Link>
           </FooterColumn>
 
           <FooterColumn title="Work">
