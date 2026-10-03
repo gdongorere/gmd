@@ -64,3 +64,18 @@ test('mobile menu opens, traps focus and closes with Escape @mobile', async ({ p
   await expect(nav).toBeHidden();
   await expect(open).toBeFocused();
 });
+
+test('the Stars link is in the header, the mobile menu and the footer', async ({ page }) => {
+  await page.goto('/?quality=static');
+  await expect(page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Stars' })).toBeVisible();
+  await expect(page.getByRole('contentinfo').getByRole('link', { name: 'Stars' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Stars' }).click();
+  await expect(page).toHaveURL(/\/stars/);
+});
+
+test('the Stars link is in the mobile menu @mobile', async ({ page }) => {
+  await page.goto('/?quality=static');
+  await page.getByRole('button', { name: 'Open menu' }).tap();
+  await page.getByRole('navigation', { name: 'Mobile' }).getByRole('link', { name: 'Stars' }).tap();
+  await expect(page).toHaveURL(/\/stars/);
+});
