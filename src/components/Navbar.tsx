@@ -60,7 +60,7 @@ export function Navbar() {
       setScrolled(y > 24);
       const delta = y - lastY.current;
       if (Math.abs(delta) > 8) {
-        const small = window.matchMedia('(max-width: 47.99em)').matches;
+        const small = window.matchMedia('(max-width: 61.99em)').matches;
         setHidden(small && delta > 0 && y > 160);
         lastY.current = y;
       }
@@ -138,7 +138,7 @@ export function Navbar() {
           <Logo />
 
           {/* Desktop */}
-          <HStack as="ul" listStyleType="none" spacing={1} display={{ base: 'none', md: 'flex' }} h="100%">
+          <HStack as="ul" listStyleType="none" spacing={1} display={{ base: 'none', lg: 'flex' }} h="100%">
             {navItems.map((item) => {
               const active = isActive(item.href);
               return (
@@ -174,7 +174,7 @@ export function Navbar() {
           {/* Mobile */}
           <IconButton
             ref={menuButtonRef}
-            display={{ base: 'inline-flex', md: 'none' }}
+            display={{ base: 'inline-flex', lg: 'none' }}
             variant="ghost"
             aria-label="Open menu"
             aria-haspopup="dialog"
