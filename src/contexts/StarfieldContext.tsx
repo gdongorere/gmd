@@ -85,7 +85,7 @@ export const DEFAULT_CONFIG: StarfieldConfig = {
 	exploreLabels: true,
 	showStats: false,
 	blackHole: {
-		isEnabled: true,
+		isEnabled: false,
 		size: 26,
 		accretionDisk: true,
 		spin: 1,
