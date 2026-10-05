@@ -14,7 +14,7 @@ import { ExploreLabels } from './ExploreLabels';
 import { InfoCard, TourCard } from './ExploreCards';
 import { MiniMap, ScaleBar, useEngineReadout } from './ExploreHud';
 import { TimePanel } from '@/components/solar/TimePanel';
-import { simClock } from '@/lib/astro/clock';
+import { parseTimeParam, simClock } from '@/lib/astro/clock';
 import { GALAXY } from '@/lib/galaxy/constants';
 
 const SolarView = dynamic(() => import('@/components/solar/SolarView'), { ssr: false });
@@ -65,8 +65,8 @@ export default function ExploreMode() {
   useEffect(() => {
     const shared = decodeView(new URLSearchParams(window.location.search).get('v'));
     target.current = shared ?? { ...VIEWS.tilted, roll: 0 };
-    const t = Number(new URLSearchParams(window.location.search).get('t'));
-    if (Number.isFinite(t) && t > 0) simClock().setJd(t);
+    const t = parseTimeParam(new URLSearchParams(window.location.search).get('t'));
+    if (t !== null) simClock().setJd(t);
     else simClock().now(); // boot at the real current time
     galaxyBus.setExplore({ active: true, target: target.current, timeScale: 1, galacticYears: () => simClock().yearsSinceJ2000() });
     const prevOverflow = document.body.style.overflow;

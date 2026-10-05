@@ -37,6 +37,7 @@ export interface ClockSnapshot {
 	live: boolean;
 }
 
+/** Largest |JD| the clock can hold. */
 const clampJd = (jd: number) => Math.min(J2000 + MAX_ABS_YEARS * DAYS_PER_YEAR, Math.max(J2000 - MAX_ABS_YEARS * DAYS_PER_YEAR, jd));
 
 type Listener = () => void;
@@ -85,12 +86,14 @@ export class SimClock {
 	}
 
 	setJd(jd: number) {
+		if (!Number.isFinite(jd)) return; // never let NaN/±Infinity into the clock
 		this.anchorJd = clampJd(jd);
 		this.anchorPerf = this.perf();
 		this.emit();
 	}
 
 	setRate(secondsPerSecond: number) {
+		if (!Number.isFinite(secondsPerSecond)) return;
 		this.rebase();
 		this._rate = secondsPerSecond;
 		this.emit();
@@ -124,6 +127,16 @@ export class SimClock {
 	private emit() {
 		this.listeners.forEach((l) => l());
 	}
+}
+
+/**
+ * Parse a shared `?t=` Julian Date. Returns null for anything missing, non-numeric or non-finite;
+ * otherwise the value clamped to the clock's range (negative JDs are valid: deep-past dates).
+ */
+export function parseTimeParam(raw: string | null | undefined): number | null {
+	if (raw == null || raw.trim() === '') return null;
+	const t = Number(raw);
+	return Number.isFinite(t) ? clampJd(t) : null;
 }
 
 /** The one clock the app shares. Created lazily so server rendering never touches it. */

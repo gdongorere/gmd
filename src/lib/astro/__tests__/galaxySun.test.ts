@@ -15,3 +15,18 @@ describe('galactic Sun', () => {
 		for (let m = -200; m <= 200; m += 10) expect(Math.abs(sunHeightPc(m * 1e6))).toBeLessThan(110);
 	});
 });
+
+describe('sunHeightPc continuity', () => {
+	it('equals z0 today and varies smoothly (no jumps between 1 kyr steps)', () => {
+		expect(sunHeightPc(0)).toBeCloseTo(SUN_GALAXY.z0.value, 6);
+		let prev = sunHeightPc(-150e6);
+		for (let y = -150e6 + 1e5; y <= 150e6; y += 1e5) {
+			const h = sunHeightPc(y);
+			expect(Math.abs(h - prev)).toBeLessThan(8); // pc per 0.1 Myr, far below any discontinuity
+			prev = h;
+		}
+	});
+	it('oscillates with the stated vertical period', () => {
+		expect(sunHeightPc(SUN_GALAXY.verticalPeriodMyr.value * 1e6)).toBeCloseTo(sunHeightPc(0), 4);
+	});
+});
