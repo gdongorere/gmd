@@ -24,7 +24,7 @@ export default function SolarView({ onClose, initialTab, autoDescend = false }: 
   const [supported, setSupported] = useState<boolean | null>(null);
   useEffect(() => setSupported(solar3dSupported()), []);
   const [tab, setTab] = useState<number | null>(null);
-  const start = supported === null ? null : initialTab ? ORDER.indexOf(initialTab) : supported ? 0 : 1;
+  const start = supported === null ? null : initialTab && (initialTab !== '3d' || supported) ? ORDER.indexOf(initialTab) : supported ? 0 : 1;
   const index = tab ?? start;
   const fallBack = useCallback(() => { setSupported(false); setTab(1); }, []);
   return (

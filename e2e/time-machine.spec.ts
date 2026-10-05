@@ -119,4 +119,55 @@ test.describe('Time machine', () => {
     await page.getByText('True scale', { exact: true }).click();
     await expect(page.getByTestId('scale-badge')).toContainText('True scale');
   });
+
+  test('keyboard shortcuts change speed and return to the present', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press(']');
+    await expect(page.getByRole('button', { name: /Time speed: 1 min\/s/ })).toBeVisible();
+    await page.keyboard.press('[');
+    await expect(page.getByRole('button', { name: /Time speed: Real time/ })).toBeVisible();
+    await page.keyboard.press('.');
+    await expect(page.getByText(/· live/)).toBeHidden();
+    await page.keyboard.press('n');
+    await expect(page.getByText(/· live/)).toBeVisible();
+  });
+
+  test('a bookmarked moment survives a reload and can be jumped to', async ({ page }) => {
+    await page.goto('/stars?t=2460409.2625');
+    await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
+    await page.keyboard.press('b');
+    await page.keyboard.press('n');
+    await page.reload();
+    await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
+    await page.keyboard.press('j');
+    const dialog = page.getByRole('dialog', { name: 'Time machine' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: /8 Apr 2024/ }).first().click();
+    await expect(page.getByLabel(/^Universal time:/)).toContainText('2024');
+  });
+
+  test('the shared ?t= link restores that moment on load', async ({ page }) => {
+    await page.goto('/stars?t=2460409.2625');
+    await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
+    await expect(page.getByLabel(/^Universal time:/)).toContainText(/2024/);
+    await expect(page.getByText(/· live/)).toBeHidden();
+  });
+
+  test('the time-travel tour walks from today to deep time and back', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('Shift+T');
+    const tour = page.getByTestId('time-tour');
+    await expect(tour).toContainText('Today');
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText('Mars goes dark, 2018');
+    await expect(page.getByLabel(/^Universal time:/)).toContainText('2018');
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText('The ice age');
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await tour.getByRole('button', { name: 'Next' }).click();
+    await expect(tour).toContainText('One galactic year ago');
+    await tour.getByRole('button', { name: 'Back to now' }).click();
+    await expect(tour).toBeHidden();
+    await expect(page.getByText(/· live/)).toBeVisible();
+  });
 });

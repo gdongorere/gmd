@@ -12,6 +12,7 @@ import { MONTHS, calendarFromJd, jdFromCalendar, jdFromUnixMs, formatDateHuman, 
 import { localClock } from '@/lib/astro/time';
 import { accuracyReport, type Level } from '@/lib/astro/accuracy';
 import { DATED_STORMS } from '@/lib/astro/mars';
+import { addBookmark, loadBookmarks, removeBookmark, saveBookmarks, type Bookmark } from '@/lib/astro/bookmarks';
 import { useSimClock, useViewerZone } from './useSimClock';
 
 const LEVEL_COLOR: Record<Level, string> = { precise: 'green', good: 'teal', approximate: 'orange', schematic: 'purple', 'n/a': 'gray' };
@@ -59,6 +60,14 @@ function TimeMachineDialog({ isOpen, onClose, jd }: { isOpen: boolean; onClose: 
   const [day, setDay] = useState('5');
   const [time, setTime] = useState('12:00');
   const [myr, setMyr] = useState('0');
+  const [marks, setMarks] = useState<Bookmark[]>([]);
+  const [saved, setSaved] = useState(true);
+  useEffect(() => { if (isOpen) setMarks(loadBookmarks()); }, [isOpen]);
+  const mark = () => {
+    const next = addBookmark(marks, `${formatDateHuman(c)}${c.year > -9999 ? ` ${formatTime(c, false)} UTC` : ''}`, jd);
+    setMarks(next);
+    setSaved(saveBookmarks(next));
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -130,6 +139,27 @@ function TimeMachineDialog({ isOpen, onClose, jd }: { isOpen: boolean; onClose: 
             </Box>
 
             <Box>
+              <Flex justify="space-between" align="center" mb={2} wrap="wrap" gap={2}>
+                <Text fontWeight={600}>Bookmarks and tour</Text>
+                <HStack>
+                  <Button size="sm" variant="outline" onClick={mark}>Bookmark this moment (B)</Button>
+                  <Button size="sm" variant="outline" onClick={() => { onClose(); window.dispatchEvent(new Event('tm:tour')); }}>Time-travel tour</Button>
+                </HStack>
+              </Flex>
+              {marks.length === 0 && <Text fontSize="sm" color="content.muted">No bookmarks yet. They stay in this browser only.</Text>}
+              {!saved && <Text fontSize="sm" color="orange.300">This browser blocked saving, so bookmarks will be lost when you leave.</Text>}
+              <Stack spacing={1} as="ul" listStyleType="none" m={0} p={0}>
+                {marks.map((b) => (
+                  <Flex as="li" key={b.id} gap={2} align="center">
+                    <Button size="sm" variant="ghost" justifyContent="flex-start" flex={1} whiteSpace="normal" textAlign="left" h="auto" py={1}
+                      onClick={() => { clock.setJd(b.jd); onClose(); }}>{b.label}</Button>
+                    <Button size="xs" variant="outline" aria-label={`Remove bookmark ${b.label}`} onClick={() => { const n = removeBookmark(marks, b.id); setMarks(n); setSaved(saveBookmarks(n)); }}>Remove</Button>
+                  </Flex>
+                ))}
+              </Stack>
+            </Box>
+
+            <Box>
               <Text fontWeight={600} mb={1}>How accurate is this moment?</Text>
               <Text fontSize="sm" color="content.muted" mb={3}>Every part of the simulation reports how far it can be trusted at the chosen time.</Text>
               <Stack spacing={2}>
@@ -155,6 +185,11 @@ export function TimePanel({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const openIt = () => setOpen(true);
+    window.addEventListener('tm:open', openIt);
+    return () => window.removeEventListener('tm:open', openIt);
+  }, []);
   const clock = simClock();
   const nowJd = jdFromUnixMs(Date.now());
 

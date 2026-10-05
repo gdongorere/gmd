@@ -16,6 +16,11 @@ import { InfoCard, TourCard } from './ExploreCards';
 import { MiniMap, ScaleBar, useEngineReadout } from './ExploreHud';
 import { TimePanel } from '@/components/solar/TimePanel';
 import { parseTimeParam, simClock } from '@/lib/astro/clock';
+import { neighbourRate, stepSeconds, timeActionForKey } from '@/lib/astro/shortcuts';
+import { addBookmark, loadBookmarks, saveBookmarks } from '@/lib/astro/bookmarks';
+import { TIME_TOUR } from '@/lib/astro/tour';
+import { calendarFromJd, formatDateHuman, formatTime, jdFromUnixMs } from '@/lib/astro/julian';
+import type { SolarTab } from '@/components/solar/SolarView';
 import { GALAXY } from '@/lib/galaxy/constants';
 
 const SolarView = dynamic(() => import('@/components/solar/SolarView'), { ssr: false });
@@ -32,6 +37,12 @@ const KEYS_HELP: [string, string][] = [
   ['← → ↑ ↓  or  W A S D', 'Orbit with the keyboard'],
   ['1 – 8', 'Fly to a place (Sgr A*, bar, Perseus, Orion Spur, Sun, cluster, LMC, SMC)'],
   ['Space', 'Pause or resume time'],
+  [', .', 'Step the clock back or forward'],
+  ['[ ]', 'Slower or faster time'],
+  ['N', 'Back to the real time now'],
+  ['J', 'Open the time machine (jump to any date)'],
+  ['B', 'Bookmark this moment'],
+  ['Shift + T', 'Time-travel tour: today, Mars 2018, ice age, dinosaurs, a galactic year ago'],
   ['L', 'Toggle labels'],
   ['O', 'Zoom into the Sun and Solar System, or back out'],
   ['H', 'Take me home: fly from the Solar System down to Earth'],
@@ -57,6 +68,8 @@ export default function ExploreMode() {
   const [help, setHelp] = useState(false);
   const [solar, setSolar] = useState(false);
   const [descend, setDescend] = useState(0);
+  const [solarTab, setSolarTab] = useState<SolarTab | undefined>(undefined);
+  const [timeTour, setTimeTour] = useState<number | null>(null);
   const [announce, setAnnounce] = useState('');
   const target = useRef<CameraPose>(clonePose(VIEWS.tilted));
   const surface = useRef<HTMLDivElement>(null);
@@ -149,14 +162,57 @@ export default function ExploreMode() {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  const bookmarkNow = useCallback(() => {
+    const jd = simClock().jd();
+    const c = calendarFromJd(jd);
+    const ok = saveBookmarks(addBookmark(loadBookmarks(), `${formatDateHuman(c)} ${formatTime(c, false)} UTC`, jd));
+    toast({ title: ok ? 'Moment bookmarked' : 'Couldn’t save the bookmark', description: ok ? 'Find it under the clock button, in Bookmarks.' : 'This browser blocked storage.', status: ok ? 'success' : 'warning', duration: 3000 });
+  }, [toast]);
+
+  // --- Time-travel tour ----------------------------------------------------------------
+  const goTimeTour = useCallback((index: number) => {
+    const step = TIME_TOUR[index];
+    if (!step) return;
+    setTimeTour(index);
+    setSelected(null);
+    setTourStep(null);
+    const nowJd = jdFromUnixMs(Date.now());
+    if (index === 0) simClock().now(); else simClock().setJd(step.jd(nowJd));
+    simClock().setPlaying(index === 0 ? true : false);
+    if (step.view === 'galaxy') setSolar(false);
+    else { setSolarTab(step.view); setDescend(0); setSolar(true); }
+    setAnnounce(`Time-travel tour, step ${index + 1} of ${TIME_TOUR.length}: ${step.title}. ${step.body}`);
+  }, []);
+  const endTimeTour = useCallback(() => { setTimeTour(null); setSolarTab(undefined); simClock().now(); setAnnounce('Time-travel tour ended; back to the present'); }, []);
+  useEffect(() => {
+    const start = () => goTimeTour(0);
+    window.addEventListener('tm:tour', start);
+    return () => window.removeEventListener('tm:tour', start);
+  }, [goTimeTour]);
+
   // --- Keyboard ----------------------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target) || help) return;
       const k = e.key;
       const lower = k.toLowerCase();
+      // Clock shortcuts work everywhere, including over the solar overlay.
+      const timeAction = timeActionForKey(k, e.shiftKey);
+      if (timeAction) {
+        const clock = simClock();
+        if (timeAction === 'step-back') clock.nudge(-stepSeconds(clock.rate));
+        else if (timeAction === 'step-forward') clock.nudge(stepSeconds(clock.rate));
+        else if (timeAction === 'slower') clock.setRate(neighbourRate(clock.rate, -1));
+        else if (timeAction === 'faster') clock.setRate(neighbourRate(clock.rate, 1));
+        else if (timeAction === 'now') clock.now();
+        else if (timeAction === 'open-time-machine') window.dispatchEvent(new Event('tm:open'));
+        else if (timeAction === 'bookmark') bookmarkNow();
+        else if (timeAction === 'time-tour') window.dispatchEvent(new Event('tm:tour'));
+        e.preventDefault();
+        return;
+      }
       // While the full-screen solar overlay is open, the galaxy underneath must not react.
-      if (solar && lower !== 'o' && k !== 'Escape' && k !== ' ') return;
+      if (solar && lower !== 'o' && lower !== 'h' && k !== 'Escape' && k !== ' ') return;
       const step = e.shiftKey ? 0.16 : 0.07;
       if (k === 'ArrowLeft' || lower === 'a') orbit(target.current, step, 0);
       else if (k === 'ArrowRight' || lower === 'd') orbit(target.current, -step, 0);
@@ -173,7 +229,7 @@ export default function ExploreMode() {
         else endTour();
       }
       else if (k === '?') setHelp(true);
-      else if (k === 'Escape') { if (solar) setSolar(false); else setSelected(null); if (tourStep !== null) endTour(); }
+      else if (k === 'Escape') { if (timeTour !== null) endTimeTour(); else if (solar) setSolar(false); else setSelected(null); if (tourStep !== null) endTour(); }
       else if (/^[1-8]$/.test(k)) {
         const f = featureById(FLY_TO_ORDER[Number(k) - 1]);
         if (f) showFeature(f);
@@ -183,7 +239,7 @@ export default function ExploreMode() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [help, solar, tourStep, startTour, endTour, showFeature, goTour]);
+  }, [help, solar, tourStep, startTour, endTour, showFeature, goTour, bookmarkNow, timeTour, endTimeTour]);
 
   // --- Share and save ---------------------------------------------------------------------
   const share = async () => {
@@ -272,9 +328,24 @@ export default function ExploreMode() {
 
       {/* Cards */}
       {selected && tourStep === null && !solar && <InfoCard feature={selected} onClose={() => setSelected(null)} onFlyHere={() => flyTo(featurePose(selected))} action={selected.id === 'sun' ? { label: 'Zoom into the Sun', onClick: () => setSolar(true) } : undefined} />}
-      {solar && <SolarView key={descend} onClose={() => setSolar(false)} autoDescend={descend > 0} />}
+      {solar && <SolarView key={`${descend}-${solarTab ?? ''}`} onClose={() => setSolar(false)} autoDescend={descend > 0} initialTab={solarTab} />}
       {tourStepData && tourStep !== null && (
         <TourCard step={tourStepData} index={tourStep} total={TOUR.length} onPrev={() => goTour(Math.max(0, tourStep - 1))} onNext={() => goTour(tourStep + 1)} onEnd={endTour} />
+      )}
+
+      {timeTour !== null && (
+        <Box position="fixed" zIndex={45} top={{ base: '64px', md: '76px' }} right={3} w={{ base: 'calc(100% - 24px)', md: '360px' }} bg="surface.raised" border="1px solid" borderColor="line.strong" borderRadius="xl" p={4} role="region" aria-label="Time-travel tour" data-testid="time-tour">
+          <Text fontSize="xs" color="content.muted" textTransform="uppercase" letterSpacing="0.06em">Time-travel tour · {timeTour + 1} of {TIME_TOUR.length}</Text>
+          <Text fontFamily="heading" fontWeight={700} fontSize="lg">{TIME_TOUR[timeTour].title}</Text>
+          <Text color="content.secondary" fontSize="sm" mt={1}>{TIME_TOUR[timeTour].body}</Text>
+          <HStack mt={3} spacing={2}>
+            <Button size="sm" variant="outline" onClick={() => goTimeTour(Math.max(0, timeTour - 1))} isDisabled={timeTour === 0}>Back</Button>
+            {timeTour < TIME_TOUR.length - 1
+              ? <Button size="sm" variant="solid" onClick={() => goTimeTour(timeTour + 1)}>Next</Button>
+              : <Button size="sm" variant="solid" onClick={endTimeTour}>Back to now</Button>}
+            <Button size="sm" variant="ghost" onClick={endTimeTour}>Exit</Button>
+          </HStack>
+        </Box>
       )}
 
       {/* Bottom HUD */}
