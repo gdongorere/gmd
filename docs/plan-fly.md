@@ -8,6 +8,19 @@ Sandbox facts that shape the plan are in §19.
 below was recalled from memory while planning, because the build sandbox can reach only the npm registry. They are all
 tagged **⚠** and must be entered into code with `verified: false` until checked against a source (§18).
 
+## Companion documents (read these with the master plan)
+
+| File | What it holds |
+|---|---|
+| `docs/fly/01-physics-numbers.md` | derived physics tables (gravity, escape, orbits, SOI, terminal velocity, heating, light-time) that double as unit-test targets |
+| `docs/fly/02-data-schemas-and-algorithms.md` | TypeScript data shapes, algorithms and invariants for every module |
+| `docs/fly/03-world-dossiers.md` | one dossier per world: approach, sky, surface, wind, hazards, light, audio, sites, gameplay, what to verify |
+| `docs/fly/04-roadmap-tickets.md` | ticket-level breakdown of phases F0–F12 with acceptance criteria and tests |
+| `docs/fly/05-ui-hud-spec.md` | HUD layout (desktop and mobile), states, copy, interactions, accessibility checklist |
+| `docs/fly/06-ship-spec.md` | the Wayfarer: dimensions, thrusters, gear, limits, procedural construction rules, budgets |
+| `docs/fly/07-test-matrix.md` | unit/e2e/visual/manual test matrix and quality gates |
+| `docs/fly/08-glossary-sources-verification.md` | glossary, where to verify each number, the verification log template, known gaps |
+
 ---
 
 ## 1. The idea, in one paragraph
