@@ -84,3 +84,9 @@ export function sunPositionStatement(): string {
 	const r = sunDistanceLy();
 	return `${Math.round(r).toLocaleString('en-US')} ± ${Math.round(sunDistanceUncertaintyLy()).toLocaleString('en-US')} ly from Sgr A* (GRAVITY 2019), ${sunHeightLy().toFixed(0)} ± ${(SUN_GALAXY.z0.plus * LY_PER_PC).toFixed(1)} ly north of the plane.`;
 }
+
+/** Half-angle (degrees) by which the spiral arms' position relative to the Sun is uncertain after `yearsFromNow`. */
+export function armFanHalfAngleDeg(yearsFromNow: number): number {
+  const sigma = Math.max(SUN_GALAXY.armPattern.plus, SUN_GALAXY.armPattern.minus); // km/s/kpc
+  return Math.min(180, Math.abs((sigma / MYR_PER_KPC_PER_KMS) * (yearsFromNow / 1e6)) * (180 / Math.PI));
+}

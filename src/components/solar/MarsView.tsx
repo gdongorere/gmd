@@ -92,7 +92,7 @@ export function MarsView() {
           <Box mt={4} p={3} border="1px solid" borderColor="orange.400" borderRadius="lg" bg="surface.inset">
             <Text fontWeight={700}>{storm.label}</Text>
             <Text fontSize="sm" color="content.secondary">{storm.summary}</Text>
-            <Text fontSize="xs" color="content.muted" mt={1}>Observed by {storm.observer}. Onset {formatDateHuman(calendarFromJd(storm.startJd))} (Mars Year {storm.marsYear}, Ls {storm.onsetLs}°).</Text>
+            <Text fontSize="xs" color="content.muted" mt={1}>Observed by {storm.observer}. Onset {formatDateHuman(calendarFromJd(storm.startJd))} (Mars Year {storm.marsYear}, Ls {storm.onsetLs}°). Onset dates are recalled from the literature and not yet checked against the original papers, so treat them as approximate (± weeks).</Text>
           </Box>
         )}
         <HStack mt={4} spacing={2} wrap="wrap">

@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Box, Flex, SimpleGrid, Text } from '@chakra-ui/react';
+import { Badge, Box, Checkbox, Flex, SimpleGrid, Text } from '@chakra-ui/react';
 import { GlobeCanvas } from './GlobeCanvas';
 import { useSimClock } from './useSimClock';
 import { subsolarPoint, obliquityDegrees, sunPosition, sunModel, equationOfTimeMinutes, nutation, solarElevation } from '@/lib/astro/earth';
@@ -10,7 +10,7 @@ import { gmstDegrees } from '@/lib/astro/time';
 import { climateAt, iceCover, iceEdgeLatitudes, kaBpFromJd } from '@/lib/astro/climate';
 import { eclipseNear, moonState, yearEvents } from '@/lib/astro/planets';
 import { MoonDisc } from './MoonDisc';
-import { calendarFromJd } from '@/lib/astro/julian';
+import { calendarFromJd, jdFromDecimalYear } from '@/lib/astro/julian';
 import { smoothstep } from '@/lib/astro/render';
 import type { Sampler } from '@/lib/astro/render';
 
@@ -27,7 +27,7 @@ function landCoverage(m: Uint8Array, lat: number, lon: number): number {
 
 /** Rasterises Natural Earth land polygons into an equirectangular mask. */
 function useLandMask() {
-  const [mask, setMask] = useState<Uint8Array | null>(null);
+  const [mask, setMask] = useState<{ land: Uint8Array; widened: Uint8Array | null } | null>(null);
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -49,7 +49,20 @@ function useLandMask() {
         const px = g.getImageData(0, 0, MW, MH).data;
         const m = new Uint8Array(MW * MH);
         for (let i = 0; i < m.length; i++) m[i] = px[i * 4 + 3];
-        if (alive) setMask(m);
+        // A uniformly widened coastline (≈ 100–130 km) as a stand-in for the exposed shelf. No bathymetry dataset
+        // is available offline, so this is a schematic: real shelves range from almost none to over 1,000 km wide.
+        const c2 = document.createElement('canvas');
+        c2.width = MW; c2.height = MH;
+        const g2 = c2.getContext('2d');
+        let widened: Uint8Array | null = null;
+        if (g2) {
+          g2.filter = 'blur(3px)';
+          g2.drawImage(c, 0, 0);
+          const px2 = g2.getImageData(0, 0, MW, MH).data;
+          widened = new Uint8Array(MW * MH);
+          for (let i = 0; i < widened.length; i++) widened[i] = px2[i * 4 + 3] > 12 ? 255 : 0;
+        }
+        if (alive) setMask({ land: m, widened });
       } catch { /* the globe still draws, as ocean */ }
     })();
     return () => { alive = false; };
@@ -94,8 +107,11 @@ export function EarthView() {
   const eot = equationOfTimeMinutes(snap.jd);
   const nut = nutation(snap.jd);
   const model = sunModel(snap.jd);
+  const [shelf, setShelf] = useState(false);
   const maskRef = useRef(mask);
   maskRef.current = mask;
+  const shelfRef = useRef(shelf);
+  shelfRef.current = shelf;
 
   const sampler = (jd: number): Sampler => {
     const f = climateAt(jd).iceFraction;
@@ -105,7 +121,14 @@ export function EarthView() {
       const day = smoothstep(-0.12, 0.2, light);
       const lit = Math.max(0, light);
       let r: number, g: number, b: number;
-      const cov = m ? landCoverage(m, lat, lon) : 0;
+      let cov = m ? landCoverage(m.land, lat, lon) : 0;
+      // Schematic exposed shelf: widened coastline, faded in as sea level falls.
+      const shelfAmt = shelfRef.current && m?.widened ? Math.min(1, f * 1.2) : 0;
+      let shelfCov = 0;
+      if (shelfAmt > 0 && m?.widened && cov < 0.99) {
+        shelfCov = landCoverage(m.widened, lat, lon) * shelfAmt * (1 - cov);
+        cov += shelfCov;
+      }
       // Ocean colour
       let or = 14 + 22 * lit, og = 54 + 52 * lit, ob = 112 + 62 * lit;
       const glint = Math.pow(lit, 24) * 60 * (1 - cov);
@@ -114,6 +137,7 @@ export function EarthView() {
       if (cov > 0.004) {
         const [lr0, lg0, lb0] = landColour(Math.abs(lat));
         let lr = lr0, lg = lg0, lb = lb0;
+        if (shelfCov > 0) { const k = shelfCov / cov; lr += (178 - lr) * k; lg += (160 - lg) * k; lb += (112 - lb) * k; }
         const ice = iceCover(lat, lon, f, edge);
         if (ice > 0) { lr += (240 - lr) * ice; lg += (244 - lg) * ice; lb += (250 - lb) * ice; }
         r = or + (lr - or) * cov; g = og + (lg - og) * cov; b = ob + (lb - ob) * cov;
@@ -132,7 +156,7 @@ export function EarthView() {
         ariaLabel={`Earth as it appears from space at the selected time, with the Sun overhead at ${sp.latitude.toFixed(1)}° latitude, ${sp.longitude.toFixed(1)}° longitude. Drag to rotate.`}
         subsolar={(jd) => { const s = subsolarPoint(jd); return { lat: s.latitude, lon: s.longitude }; }}
         sampler={sampler}
-        version={mask ? 1 : 0}
+        version={(mask ? 1 : 0) + (shelf ? 2 : 0)}
         overlay={(ctx, proj, jd, size) => {
           const s = subsolarPoint(jd);
           const p = proj.toScreen(s.latitude, s.longitude);
@@ -197,9 +221,12 @@ export function EarthView() {
             <Text fontSize="sm" color="content.secondary">
               About {Math.round(climate.kaBp * 1000).toLocaleString('en-US')} years before 1950 · sea level {climate.seaLevel >= 0 ? '+' : '−'}{Math.abs(Math.round(climate.seaLevel))} m · ice {Math.round(climate.iceFraction * 100)}% of its maximum.
             </Text>
-            <Text fontSize="xs" color="content.muted" mt={1}>Ice edges are drawn from a sea-level curve, not mapped. Coastlines are today’s: exposed continental shelf is not drawn.</Text>
+            <Text fontSize="xs" color="content.muted" mt={1}>Ice edges are drawn from a sea-level curve, not mapped. Coastlines are today’s unless you switch on the schematic shelf below.</Text>
+            <Checkbox mt={2} size="sm" isChecked={shelf} onChange={(e) => setShelf(e.target.checked)}>Show exposed shelf (schematic)</Checkbox>
+            {shelf && <Text fontSize="xs" color="content.muted">Every coastline is widened by the same ≈ 100–130 km. That is an illustration, not bathymetry: the real shelf is far wider off Siberia and Southeast Asia and almost absent off the Pacific coast of the Americas.</Text>}
           </Box>
         )}
+        <Milankovitch year={c.year} />
         {Math.abs(c.year) > 10000 ? <Text fontSize="sm" color="content.muted" mt={3}>Beyond ±10,000 years Earth’s tilt is held at its edge value and the orbit is not evolved, so the tilt and Sun distance above are approximate.</Text> : null}
       </Box>
     </SimpleGrid>
@@ -211,6 +238,34 @@ export function Fact({ label, value }: { label: string; value: string }) {
     <Box>
       <Text fontSize="xs" color="content.muted" textTransform="uppercase" letterSpacing="0.06em">{label}</Text>
       <Text fontWeight={600}>{value}</Text>
+    </Box>
+  );
+}
+
+/** Axial tilt over ±10,000 years from the Laskar (1986) polynomial: the 41,000-year pacemaker of the ice ages. */
+function Milankovitch({ year }: { year: number }) {
+  const W = 320, H = 90, pad = 8;
+  const span = 10000;
+  const pts: string[] = [];
+  const lo = 22.4, hi = 24.6;
+  for (let y = -span; y <= span; y += 250) {
+    const e = obliquityDegrees(jdFromDecimalYear(2000 + y));
+    pts.push(`${(pad + ((y + span) / (2 * span)) * (W - 2 * pad)).toFixed(1)},${(H - pad - ((e - lo) / (hi - lo)) * (H - 2 * pad)).toFixed(1)}`);
+  }
+  const rel = Math.max(-span, Math.min(span, year - 2000));
+  const nowX = pad + ((rel + span) / (2 * span)) * (W - 2 * pad);
+  return (
+    <Box mt={4} p={3} border="1px solid" borderColor="line.subtle" borderRadius="lg" bg="surface.inset" data-testid="milankovitch">
+      <Text fontWeight={600} mb={1}>Earth’s tilt, ±10,000 years</Text>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Earth's axial tilt from 8000 BCE to 12000 CE, now ${obliquityDegrees(jdFromDecimalYear(year)).toFixed(2)} degrees. It peaks near 24.2 degrees around 8000 BCE and falls toward 22.6 degrees by 12000 CE.`}>
+        <polyline points={pts.join(' ')} fill="none" stroke="#7fe0ff" strokeWidth={2} />
+        <line x1={nowX} y1={4} x2={nowX} y2={H - 4} stroke="#ffc13b" strokeDasharray="3 3" />
+        <text x={pad} y={H - 1} fill="#cfd8ff" fontSize="9">22.4°</text>
+        <text x={pad} y={10} fill="#cfd8ff" fontSize="9">24.6°</text>
+      </svg>
+      <Text fontSize="xs" color="content.muted">
+        In this window the tilt falls from about 24.2° (8000 BCE) to 22.6° (12000 CE), part of a 41,000-year cycle, changing how strongly the seasons bite at high latitudes, which is what paces the ice ages. The polynomial is only valid for ±10,000 years, so the 800,000-year ice-age curve above is not drawn from it. Orbital eccentricity and the precession of the seasons also matter; they are not shown because no checked series for them is available offline.
+      </Text>
     </Box>
   );
 }

@@ -53,3 +53,15 @@ describe('equation of time', () => {
 		expect(Math.abs(equationOfTimeMinutes(jdFromCalendar(2026, 12, 25, 12)))).toBeLessThan(1);
 	});
 });
+
+import { jdFromDecimalYear } from '../julian';
+describe('obliquity swing', () => {
+	it('was near its ~24.2° maximum in the early Holocene and falls toward ~22.6° by 12000 CE', () => {
+		const e = (y: number) => obliquityDegrees(jdFromDecimalYear(y));
+		let lo = 99, hi = 0;
+		for (let y = -8000; y <= 12000; y += 100) { lo = Math.min(lo, e(y)); hi = Math.max(hi, e(y)); }
+		expect(hi).toBeGreaterThan(24.0); expect(hi).toBeLessThan(24.6);
+		expect(lo).toBeGreaterThan(22.5); expect(lo).toBeLessThan(22.7);
+		expect(e(2000)).toBeCloseTo(23.439, 2);
+	});
+});

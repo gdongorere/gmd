@@ -11,6 +11,7 @@ import {
 import { FiArrowLeft, FiCamera, FiCompass, FiHelpCircle, FiLink, FiPlayCircle, FiSun, FiTag } from 'react-icons/fi';
 import GalaxyControls from '@/components/galaxy/GalaxyControls';
 import { ExploreLabels } from './ExploreLabels';
+import { SunUncertainty } from './SunUncertainty';
 import { InfoCard, TourCard } from './ExploreCards';
 import { MiniMap, ScaleBar, useEngineReadout } from './ExploreHud';
 import { TimePanel } from '@/components/solar/TimePanel';
@@ -232,6 +233,7 @@ export default function ExploreMode() {
         aria-hidden="true"
       />
 
+      <SunUncertainty enabled={labelsOn} />
       <ExploreLabels enabled={labelsOn} selectedId={selected?.id ?? null} onSelect={showFeature} />
 
       {/* Top bar */}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SUN_ORBIT_MYR, SUN_TOTAL_SPEED, sunDistanceLy, sunHeightLy, sunHeightPc, SUN_GALAXY } from '../galaxySun';
+import { armFanHalfAngleDeg, SUN_ORBIT_MYR, SUN_TOTAL_SPEED, sunDistanceLy, sunHeightLy, sunHeightPc, SUN_GALAXY } from '../galaxySun';
 
 describe('galactic Sun', () => {
 	it('R0 = 8.178 kpc ≈ 26,673 ly', () => expect(sunDistanceLy()).toBeCloseTo(26673, -1));
@@ -28,5 +28,14 @@ describe('sunHeightPc continuity', () => {
 	});
 	it('oscillates with the stated vertical period', () => {
 		expect(sunHeightPc(SUN_GALAXY.verticalPeriodMyr.value * 1e6)).toBeCloseTo(sunHeightPc(0), 4);
+	});
+});
+
+describe('arm-drift uncertainty fan', () => {
+	it('is zero now, grows with |time|, and is symmetric and capped', () => {
+		expect(armFanHalfAngleDeg(0)).toBe(0);
+		expect(armFanHalfAngleDeg(-50e6)).toBeCloseTo(armFanHalfAngleDeg(50e6), 9);
+		expect(armFanHalfAngleDeg(50e6)).toBeGreaterThan(armFanHalfAngleDeg(10e6));
+		expect(armFanHalfAngleDeg(1e10)).toBe(180);
 	});
 });
