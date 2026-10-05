@@ -2,8 +2,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Box, Button, ButtonGroup, HStack, IconButton, Stack, Text } from '@chakra-ui/react';
-import { FiPause, FiPlay, FiRewind } from 'react-icons/fi';
+import { Box, Text } from '@chakra-ui/react';
 import { ARMS, ARM_PHASE_OFFSET, GALAXY } from '@/lib/galaxy/constants';
 import { cameraPosition, niceScale } from '@/lib/galaxy/explore';
 import type { CameraPose } from '@/lib/galaxy/camera';
@@ -108,54 +107,5 @@ export function MiniMap({ pose }: { pose: CameraPose | null }) {
         )}
       </svg>
     </Box>
-  );
-}
-
-// --- Time controls -----------------------------------------------------------
-
-export interface TimeState { playing: boolean; reverse: boolean; speed: number }
-export const SPEEDS = [0.25, 1, 4, 16];
-
-export function TimeControls({ time, onChange, myr }: { time: TimeState; onChange: (t: TimeState) => void; myr: number }) {
-  const galacticYears = myr / 230;
-  return (
-    <Stack spacing={1} align="center" role="group" aria-label="Time controls">
-      <HStack spacing={2}>
-        <IconButton
-          aria-label={time.playing ? 'Pause time' : 'Play time'}
-          icon={time.playing ? <FiPause /> : <FiPlay />}
-          size="sm"
-          variant="outline"
-          onClick={() => onChange({ ...time, playing: !time.playing })}
-        />
-        <IconButton
-          aria-label="Reverse time"
-          aria-pressed={time.reverse}
-          icon={<FiRewind />}
-          size="sm"
-          variant="outline"
-          bg={time.reverse ? 'accent.subtle' : undefined}
-          borderColor={time.reverse ? 'accent.fg' : undefined}
-          onClick={() => onChange({ ...time, reverse: !time.reverse })}
-        />
-        <ButtonGroup size="sm" isAttached variant="outline" role="radiogroup" aria-label="Speed">
-          {SPEEDS.map((s) => (
-            <Button
-              key={s}
-              role="radio"
-              aria-checked={time.speed === s}
-              bg={time.speed === s ? 'accent.subtle' : undefined}
-              borderColor={time.speed === s ? 'accent.fg' : undefined}
-              onClick={() => onChange({ ...time, speed: s })}
-            >
-              {s}×
-            </Button>
-          ))}
-        </ButtonGroup>
-      </HStack>
-      <Text fontSize="xs" color="content.secondary" aria-live="off">
-        {myr >= 0 ? '+' : ''}{myr.toFixed(0)} Myr · {galacticYears.toFixed(2)} galactic years
-      </Text>
-    </Stack>
   );
 }

@@ -2,16 +2,22 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import NextLink from 'next/link';
 import {
   Box, Button, Flex, HStack, IconButton, Kbd, Menu, MenuButton, MenuItem, MenuList, Modal, ModalBody, ModalCloseButton, ModalContent,
   ModalHeader, ModalOverlay, SimpleGrid, Text, Tooltip, useToast, VisuallyHidden,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiCamera, FiCompass, FiHelpCircle, FiLink, FiPlayCircle, FiTag } from 'react-icons/fi';
+import { FiArrowLeft, FiCamera, FiCompass, FiHelpCircle, FiLink, FiPlayCircle, FiSun, FiTag } from 'react-icons/fi';
 import GalaxyControls from '@/components/galaxy/GalaxyControls';
 import { ExploreLabels } from './ExploreLabels';
 import { InfoCard, TourCard } from './ExploreCards';
-import { MiniMap, ScaleBar, SPEEDS, TimeControls, useEngineReadout, type TimeState } from './ExploreHud';
+import { MiniMap, ScaleBar, useEngineReadout } from './ExploreHud';
+import { TimePanel } from '@/components/solar/TimePanel';
+import { simClock } from '@/lib/astro/clock';
+import { GALAXY } from '@/lib/galaxy/constants';
+
+const SolarView = dynamic(() => import('@/components/solar/SolarView'), { ssr: false });
 import { useStarfield } from '@/contexts/StarfieldContext';
 import { galaxyBus } from '@/lib/galaxy/bus';
 import { clonePose, VIEWS, type CameraPose } from '@/lib/galaxy/camera';
@@ -26,6 +32,7 @@ const KEYS_HELP: [string, string][] = [
   ['1 – 8', 'Fly to a place (Sgr A*, bar, Perseus, Orion Spur, Sun, cluster, LMC, SMC)'],
   ['Space', 'Pause or resume time'],
   ['L', 'Toggle labels'],
+  ['O', 'Zoom into the Sun and Solar System, or back out'],
   ['T', 'Start or end the guided tour'],
   ['G', 'Galaxy settings'],
   ['?', 'This help'],
@@ -44,21 +51,24 @@ export default function ExploreMode() {
   const readout = useEngineReadout();
   const [selected, setSelected] = useState<Feature | null>(null);
   const [tourStep, setTourStep] = useState<number | null>(null);
-  const [time, setTime] = useState<TimeState>({ playing: true, reverse: false, speed: 1 });
   const [labels, setLabels] = useState(true);
   const [help, setHelp] = useState(false);
+  const [solar, setSolar] = useState(false);
   const [announce, setAnnounce] = useState('');
   const target = useRef<CameraPose>(clonePose(VIEWS.tilted));
   const surface = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ dist: number } | null>(null);
-  const labelsOn = labels && config.exploreLabels;
+  const labelsOn = labels && config.exploreLabels && !solar;
 
   // Take over the camera while this page is open.
   useEffect(() => {
     const shared = decodeView(new URLSearchParams(window.location.search).get('v'));
     target.current = shared ?? { ...VIEWS.tilted, roll: 0 };
-    galaxyBus.setExplore({ active: true, target: target.current, timeScale: 1 });
+    const t = Number(new URLSearchParams(window.location.search).get('t'));
+    if (Number.isFinite(t) && t > 0) simClock().setJd(t);
+    else simClock().now(); // boot at the real current time
+    galaxyBus.setExplore({ active: true, target: target.current, timeScale: 1, galacticYears: () => simClock().yearsSinceJ2000() });
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
@@ -66,12 +76,6 @@ export default function ExploreMode() {
       document.body.style.overflow = prevOverflow;
     };
   }, []);
-
-  // Time controls drive the engine's time scale.
-  useEffect(() => {
-    const state = galaxyBus.explore;
-    if (state) state.timeScale = time.playing ? (time.reverse ? -1 : 1) * time.speed : 0;
-  }, [time]);
 
   const flyTo = useCallback((pose: CameraPose) => {
     Object.assign(target.current, pose, { roll: 0 });
@@ -132,7 +136,11 @@ export default function ExploreMode() {
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      zoom(target.current, Math.exp(e.deltaY * 0.0012));
+      const p = target.current;
+      // Zooming further in while already at the closest range over the Sun steps down into the Solar System.
+      const nearSun = Math.hypot(p.targetX - GALAXY.sunRadius, p.targetY - GALAXY.sunHeight, p.targetZ) < 12;
+      if (e.deltaY < 0 && nearSun && Math.exp(p.logDistance) < 36) { setSolar(true); return; }
+      zoom(p, Math.exp(e.deltaY * 0.0012));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -151,14 +159,15 @@ export default function ExploreMode() {
       else if (k === 'ArrowDown' || lower === 's') orbit(target.current, 0, step);
       else if (k === '+' || k === '=') zoom(target.current, 0.85);
       else if (k === '-' || k === '_') zoom(target.current, 1.18);
-      else if (k === ' ' && !isInteractive(e.target)) setTime((t) => ({ ...t, playing: !t.playing }));
+      else if (k === ' ' && !isInteractive(e.target)) simClock().setPlaying(!simClock().playing);
       else if (lower === 'l') setLabels((v) => !v);
+      else if (lower === 'o') setSolar((v) => !v);
       else if (lower === 't') {
         if (tourStep === null) startTour();
         else endTour();
       }
       else if (k === '?') setHelp(true);
-      else if (k === 'Escape') { setSelected(null); if (tourStep !== null) endTour(); }
+      else if (k === 'Escape') { if (solar) setSolar(false); else setSelected(null); if (tourStep !== null) endTour(); }
       else if (/^[1-8]$/.test(k)) {
         const f = featureById(FLY_TO_ORDER[Number(k) - 1]);
         if (f) showFeature(f);
@@ -168,12 +177,13 @@ export default function ExploreMode() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [help, tourStep, startTour, endTour, showFeature, goTour]);
+  }, [help, solar, tourStep, startTour, endTour, showFeature, goTour]);
 
   // --- Share and save ---------------------------------------------------------------------
   const share = async () => {
     const pose = galaxyBus.api?.pose() ?? target.current;
-    const url = `${window.location.origin}/stars?v=${encodeView(pose)}`;
+    const snap = simClock().snapshot();
+    const url = `${window.location.origin}/stars?v=${encodeView(pose)}${snap.live ? '' : `&t=${snap.jd.toFixed(5)}`}`;
     try {
       await navigator.clipboard.writeText(url);
       toast({ title: 'Link copied', description: 'Anyone who opens it will see this exact view.', status: 'success', duration: 4000 });
@@ -230,7 +240,7 @@ export default function ExploreMode() {
           <Text display={{ base: 'none', md: 'block' }} fontFamily="heading" fontWeight={700} fontSize="lg" textShadow="0 2px 8px #000">Explore the Milky Way</Text>
         </HStack>
         <Flex direction="column" align="flex-end" gap={3} pointerEvents="auto">
-          <HStack spacing={2}>
+          <HStack spacing={2} wrap="wrap" justify="flex-end" maxW={{ base: '236px', md: 'none' }}>
             <Menu placement="bottom-end">
               <Tooltip label="Fly to a place" placement="bottom" openDelay={300}>
                 <MenuButton as={IconButton} aria-label="Fly to a place" icon={<FiCompass />} variant="glass" boxSize="44px" />
@@ -241,18 +251,20 @@ export default function ExploreMode() {
                 ))}
               </MenuList>
             </Menu>
+            {toolButton(solar ? 'Back to the galaxy' : 'Zoom into the Sun and Solar System (O)', <FiSun />, () => setSolar((v) => !v), solar)}
             {toolButton(labelsOn ? 'Hide labels (L)' : 'Show labels (L)', <FiTag />, () => setLabels((v) => !v), labelsOn)}
             {toolButton(tourStep === null ? 'Start guided tour (T)' : 'End guided tour (T)', <FiPlayCircle />, () => (tourStep === null ? startTour() : endTour()), tourStep !== null)}
             {toolButton('Copy link to this view', <FiLink />, share)}
             {toolButton('Save image', <FiCamera />, saveImage)}
             {toolButton('Help and shortcuts (?)', <FiHelpCircle />, () => setHelp(true))}
           </HStack>
-          <Box display={{ base: 'none', md: 'block' }}><MiniMap pose={readout.pose} /></Box>
+          <Box display={{ base: 'none', md: solar ? 'none' : 'block' }}><MiniMap pose={readout.pose} /></Box>
         </Flex>
       </Flex>
 
       {/* Cards */}
-      {selected && tourStep === null && <InfoCard feature={selected} onClose={() => setSelected(null)} onFlyHere={() => flyTo(featurePose(selected))} />}
+      {selected && tourStep === null && !solar && <InfoCard feature={selected} onClose={() => setSelected(null)} onFlyHere={() => flyTo(featurePose(selected))} action={selected.id === 'sun' ? { label: 'Zoom into the Sun', onClick: () => setSolar(true) } : undefined} />}
+      {solar && <SolarView onClose={() => setSolar(false)} />}
       {tourStepData && tourStep !== null && (
         <TourCard step={tourStepData} index={tourStep} total={TOUR.length} onPrev={() => goTour(Math.max(0, tourStep - 1))} onNext={() => goTour(tourStep + 1)} onEnd={endTour} />
       )}
@@ -269,11 +281,11 @@ export default function ExploreMode() {
         gap={{ base: 4, md: 8 }}
         pointerEvents="none"
       >
-        <Box display={{ base: 'none', md: 'block' }} pointerEvents="auto" bg="surface.glass" border="1px solid" borderColor="line.subtle" borderRadius="xl" px={4} py={2} backdropFilter="blur(10px)">
+        <Box display={{ base: 'none', md: solar ? 'none' : 'block' }} pointerEvents="auto" bg="surface.glass" border="1px solid" borderColor="line.subtle" borderRadius="xl" px={4} py={2} backdropFilter="blur(10px)">
           <ScaleBar distLy={dist} />
         </Box>
         <Box pointerEvents="auto" bg="surface.glass" border="1px solid" borderColor="line.subtle" borderRadius="xl" px={4} py={2} backdropFilter="blur(10px)">
-          <TimeControls time={time} onChange={setTime} myr={readout.myr} />
+          <TimePanel />
         </Box>
       </Flex>
 
@@ -294,7 +306,7 @@ export default function ExploreMode() {
                   <Kbd flexShrink={0} maxW="55%" whiteSpace="normal" textAlign="right">{keys}</Kbd>
                 </Flex>
               ))}
-              <Text fontSize="sm" color="content.muted" mt={2}>Time speeds: {SPEEDS.map((s) => `${s}×`).join(', ')}. One solar orbit (≈ 203 million years) is about four minutes at 1×.</Text>
+              <Text fontSize="sm" color="content.muted" mt={2}>The clock starts at the real current time. Use the clock button to jump to any date, or run time forwards and backwards from real time up to 10 million years per second. One lap of the Sun around the galaxy takes about 203 million years.</Text>
             </SimpleGrid>
           </ModalBody>
         </ModalContent>

@@ -377,3 +377,14 @@ I have recommended a default for each, so none of these block the start.
 5. **Sky from here.** Recommended: include it in S6. It is the moment that ties the galaxy, the solar system and the visitor's own sky together.
 6. **Audio.** Recommended: build the optional ambient audio, off by default. Alternative: skip audio and keep haptics only.
 7. **Wireframe review.** Recommended: you sign off the annotated wireframes at the end of S0, before the engine work begins.
+
+
+---
+
+## Update: time machine (supersedes the 1800–2050 clamp)
+
+The "1800–2050 ephemeris clamp" above is superseded by `docs/time-machine.md`: the clock now spans ±2 Gyr,
+planets/Moon come from `astronomy-engine` (lazy-loaded) with an explicit accuracy report instead of a hard
+clamp, Earth and Mars are drawn per-pixel on a 2D canvas (no photo textures), and Mars dust storms and the
+ice ages are first-class time-travel destinations. The float64 camera-relative three.js solar scene remains
+future work; the current "Zoom into the Sun" step is an overlay hand-off from the galaxy view.

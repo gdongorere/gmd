@@ -43,6 +43,8 @@ export interface GlobeProjector {
 	toScreen(latDeg: number, lonDeg: number): { u: number; v: number; depth: number };
 	/** Inverse for a point on the visible disk (u right, v up, |(u,v)| ≤ 1). */
 	fromScreen(u: number, v: number): { lat: number; lon: number; normal: Vec3 } | null;
+	/** Allocation-free inverse for per-pixel loops: writes [lat, lon, nx, ny, nz] into `out`; false when off the disk. */
+	inverse(u: number, v: number, out: Float64Array): boolean;
 }
 
 /** Camera looking at the body from azimuth/elevation (degrees) measured in the Sun frame. */
@@ -57,6 +59,23 @@ export function makeProjector(s: SubSolar, azDeg: number, elDeg: number): GlobeP
 		toScreen(lat, lon) {
 			const sf = bodyToSunFrame(latLonToVec(lat, lon), s);
 			return { u: dot(sf, right), v: dot(sf, up), depth: dot(sf, d) };
+		},
+		inverse(u, v, out) {
+			const r2 = u * u + v * v;
+			if (r2 > 1) return false;
+			const w = Math.sqrt(1 - r2);
+			const sx = d[0] * w + right[0] * u + up[0] * v;
+			const sy = d[1] * w + right[1] * u + up[1] * v;
+			const sz = d[2] * w + right[2] * u + up[2] * v;
+			const del = s.lat * D2R, lam = s.lon * D2R;
+			const x1 = sx * Math.cos(del) - sz * Math.sin(del);
+			const z1 = sx * Math.sin(del) + sz * Math.cos(del);
+			const bx = x1 * Math.cos(lam) - sy * Math.sin(lam);
+			const by = x1 * Math.sin(lam) + sy * Math.cos(lam);
+			out[0] = Math.asin(Math.max(-1, Math.min(1, z1))) * R2D;
+			out[1] = Math.atan2(by, bx) * R2D;
+			out[2] = w; out[3] = u; out[4] = v;
+			return true;
 		},
 		fromScreen(u, v) {
 			const r2 = u * u + v * v;

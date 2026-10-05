@@ -92,8 +92,9 @@ export function formatTime(c: CalendarDate, withSeconds = true): string {
 
 /** Human-friendly year label: "2026", "44 BCE", "19,999 BCE" (astronomical year −19998). */
 export function formatYearHuman(year: number): string {
-	if (year > 0) return year.toLocaleString('en-US');
-	return `${(1 - year).toLocaleString('en-US')} BCE`;
+	const group = (n: number) => (n >= 10000 ? n.toLocaleString('en-US') : String(n));
+	if (year > 0) return group(year);
+	return `${group(1 - year)} BCE`;
 }
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

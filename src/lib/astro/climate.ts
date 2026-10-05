@@ -62,3 +62,24 @@ export function climateAt(jd: number): ClimateState {
 	if (kaBp > 118 && kaBp < 130) label = 'Eemian interglacial — warmer and higher seas than today';
 	return { kaBp, seaLevel: sea, iceFraction: f, label, applicable: kaBp > 0.5 && kaBp <= ICE_AGE_RANGE_KA };
 }
+
+const smooth = (a: number, b: number, x: number) => {
+	const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+	return t * t * (3 - 2 * t);
+};
+
+/**
+ * Ice cover (0–1) of a LAND point at a latitude/longitude, for the schematic globe: permanent
+ * Antarctic and Greenland ice plus the ice-age sheets (Laurentide, Fennoscandian, Siberian fringe,
+ * Patagonian). `f` is `iceFraction`, `edge` is `iceEdgeLatitudes`.
+ */
+export function iceCover(lat: number, lon: number, f: number, edge: { northAmerica: number; eurasia: number }): number {
+	if (lat < -62) return 1;
+	if (lat > 59 && lat < 84 && lon > -74 && lon < -11) return 1;
+	if (f <= 0.02) return 0;
+	if (lon > -168 && lon < -52) return smooth(edge.northAmerica - 1.5, edge.northAmerica + 1.5, lat);
+	if (lon > -12 && lon < 60) return smooth(edge.eurasia - 1.5, edge.eurasia + 1.5, lat);
+	if (lat > 0) return smooth(72 - f * 4 - 1.5, 72 - f * 4 + 1.5, lat);
+	if (f > 0.25 && lat < -44 && lon > -78 && lon < -62) return f;
+	return 0;
+}

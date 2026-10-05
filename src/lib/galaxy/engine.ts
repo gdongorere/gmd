@@ -9,6 +9,7 @@ import {
 } from 'three';
 import type { StarfieldConfig, StarfieldStats } from '@/contexts/StarfieldContext';
 import { CAMERA_FOV, CAMERA_REFERENCE_DISTANCE, GALAXY, LY_PER_UNIT } from './constants';
+import { SUN_ORBIT_MYR } from '../astro/galaxySun';
 import { CameraPose, DEFAULT_PATH, VIEWS, clonePose, damp, dampPose, newPose, poseAlong, poseBetween, smootherstep } from './camera';
 import { galaxyBus, type GalaxyApi, type WaypointEntry } from './bus';
 import { GalaxyData, LAYER_NAMES, LayerName, generateGalaxy } from './generate';
@@ -610,9 +611,16 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 		const explore = galaxyBus.explore;
 		const timeScale = explore?.active ? explore.timeScale : 1;
 		if (config.rotation) {
-			const step = dt * ((2 * Math.PI) / orbitSeconds) * (reducedMotion ? 0.1 : 1) * timeScale;
-			shared.uTime.value += step;
-			elapsedMyr += (step / (2 * Math.PI)) * 230; // one solar orbit ≈ 230 Myr
+			if (explore?.active && explore.galacticYears) {
+				// Simulated time drives the rotation directly: one lap of the Sun = SUN_ORBIT_MYR.
+				const years = explore.galacticYears();
+				shared.uTime.value = (2 * Math.PI * years) / (SUN_ORBIT_MYR * 1e6);
+				elapsedMyr = years / 1e6;
+			} else {
+				const step = dt * ((2 * Math.PI) / orbitSeconds) * (reducedMotion ? 0.1 : 1) * timeScale;
+				shared.uTime.value += step;
+				elapsedMyr += (step / (2 * Math.PI)) * SUN_ORBIT_MYR;
+			}
 		}
 		// Dim the galaxy for reading, but never on the hero or in explore mode.
 		const reading =
