@@ -375,7 +375,7 @@ export default function ExploreMode() {
       {!hudHidden && <GalaxyControls raised />}
       <IconButton
         aria-label={hudHidden ? 'Show the interface (I)' : 'Hide the interface (I)'} aria-pressed={hudHidden} icon={hudHidden ? <FiEye /> : <FiEyeOff />}
-        position="fixed" left={3} bottom={{ base: 'calc(12px + env(safe-area-inset-bottom))', md: 5 }} zIndex={50} size="sm" variant="glass" opacity={hudHidden ? 0.45 : 0.8} _hover={{ opacity: 1 }} _focusVisible={{ opacity: 1 }}
+        position="fixed" left={3} bottom={{ base: 'calc(222px + env(safe-area-inset-bottom))', md: 5 }} zIndex={50} size="sm" variant="glass" opacity={hudHidden ? 0.45 : 0.8} _hover={{ opacity: 1 }} _focusVisible={{ opacity: 1 }}
         onClick={() => setHudHidden((v) => !v)} data-testid="hud-toggle"
       />
 
