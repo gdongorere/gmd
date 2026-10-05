@@ -29,8 +29,10 @@ export interface ExploreState {
 	/** Explore mode drives the camera directly instead of following the page's waypoints. */
 	active: boolean;
 	target: CameraPose;
-	/** Time scale: 1 = normal speed, 0 = paused, negative = reverse. */
+	/** Time scale: 1 = normal speed, 0 = paused, negative = reverse. Ignored when `galacticYears` is set. */
 	timeScale: number;
+	/** Simulated years since J2000. When provided, the galaxy's rotation follows it exactly. */
+	galacticYears?: () => number;
 }
 
 class GalaxyBus {

@@ -1,4 +1,5 @@
 // src/lib/galaxy/constants.ts
+import { SUN_OMEGA_KMS_KPC } from '@/lib/astro/galaxySun';
 // Real-world Milky Way parameters, scaled for the WebGL scene.
 //
 // Scene scale: 1 world unit = 100 light-years. The galactic plane is the
@@ -37,9 +38,9 @@ export const GALAXY = {
 	/** Galactocentric radius where the Sagittarius–Carina arm crosses the Sun–GC line (≈ 7 kpc). */
 	sagittariusRadiusAtSun: ly(22_800),
 
-	/** Sun: R₀ ≈ 8.2 kpc ≈ 26,000 ly from the centre, ≈ 20 pc (65 ly) above the plane. */
-	sunRadius: ly(26_000),
-	sunHeight: ly(65),
+	/** Sun: R₀ = 8.178 kpc ≈ 26,673 ly (GRAVITY 2019), z⊙ = 20.8 pc ≈ 68 ly above the plane (Bennett & Bovy 2019). */
+	sunRadius: ly(8.178 * 3_261.5638),
+	sunHeight: ly(20.8 * 3.261564),
 
 	/** Outer-disk warp: starts ≈ 10 kpc, reaches ≈ 2–3 kpc out of the plane at the disk edge. */
 	warpStartRadius: ly(33_000),
@@ -59,12 +60,14 @@ export const GALAXY = {
 } as const;
 
 export const DYNAMICS = {
-	/** Flat rotation curve ≈ 230 km/s. */
-	circularVelocity: 230,
+	/** Flat rotation curve: Θ₀ = 236 ± 7 km/s (Reid et al. 2019). */
+	circularVelocity: 236,
 	/** Radius over which the rotation curve rises to flat (bulge-dominated core). */
 	rotationCoreRadius: ly(1_500),
-	/** Bar / spiral density-wave pattern speed ≈ 40 km/s/kpc. */
-	patternSpeed: 40,
+	/** Bar pattern speed 39 ± 3.5 km/s/kpc (Portail et al. 2017). */
+	patternSpeed: 39,
+	/** Spiral-arm pattern speed ≈ 28 km/s/kpc (20–32 plausible; poorly constrained). */
+	armPatternSpeed: 28,
 	/** kpc per world unit, to express angular speeds in km/s/kpc. */
 	kpcPerUnit: LY_PER_UNIT / 3_261.56,
 	/** Thick-disk asymmetric drift: lags the thin disk by ≈ 15%. */
@@ -85,9 +88,10 @@ export function relativeOmega(r: number): number {
 	return circularSpeed(safeR) / safeR / SUN_OMEGA;
 }
 
-/** Bar/arm pattern speed relative to the Sun's angular speed (≈ 1.43). */
-export const PATTERN_OMEGA =
-	(DYNAMICS.patternSpeed * DYNAMICS.kpcPerUnit) / SUN_OMEGA;
+/** Bar pattern speed relative to the Sun's angular speed. */
+export const PATTERN_OMEGA = DYNAMICS.patternSpeed / SUN_OMEGA_KMS_KPC;
+/** Spiral-arm pattern speed relative to the Sun's angular speed. */
+export const ARM_PATTERN_OMEGA = DYNAMICS.armPatternSpeed / SUN_OMEGA_KMS_KPC;
 
 /**
  * Spiral arms as logarithmic spirals θ(r) = phase + ln(r / sagittariusRadiusAtSun) / tan(pitch).
@@ -108,10 +112,10 @@ export interface ArmSpec {
 }
 
 export const ARMS: ArmSpec[] = [
-	{ name: 'Scutum–Centaurus', phase: Math.PI, rStart: ly(15_000), rEnd: ly(50_000), weight: 0.27, oldWeight: 0.5, width: ly(1_100), omega: PATTERN_OMEGA },
-	{ name: 'Perseus', phase: 0, rStart: ly(15_000), rEnd: ly(50_000), weight: 0.27, oldWeight: 0.5, width: ly(1_100), omega: PATTERN_OMEGA },
-	{ name: 'Sagittarius–Carina', phase: Math.PI / 2, rStart: ly(11_000), rEnd: ly(42_000), weight: 0.17, oldWeight: 0, width: ly(900), omega: PATTERN_OMEGA },
-	{ name: 'Norma–Outer', phase: -Math.PI / 2, rStart: ly(11_000), rEnd: ly(50_000), weight: 0.17, oldWeight: 0, width: ly(900), omega: PATTERN_OMEGA },
+	{ name: 'Scutum–Centaurus', phase: Math.PI, rStart: ly(15_000), rEnd: ly(50_000), weight: 0.27, oldWeight: 0.5, width: ly(1_100), omega: ARM_PATTERN_OMEGA },
+	{ name: 'Perseus', phase: 0, rStart: ly(15_000), rEnd: ly(50_000), weight: 0.27, oldWeight: 0.5, width: ly(1_100), omega: ARM_PATTERN_OMEGA },
+	{ name: 'Sagittarius–Carina', phase: Math.PI / 2, rStart: ly(11_000), rEnd: ly(42_000), weight: 0.17, oldWeight: 0, width: ly(900), omega: ARM_PATTERN_OMEGA },
+	{ name: 'Norma–Outer', phase: -Math.PI / 2, rStart: ly(11_000), rEnd: ly(50_000), weight: 0.17, oldWeight: 0, width: ly(900), omega: ARM_PATTERN_OMEGA },
 ];
 
 /**
