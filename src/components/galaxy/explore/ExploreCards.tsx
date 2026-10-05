@@ -15,7 +15,7 @@ const KIND_LABELS: Record<Feature['kind'], string> = {
 
 const cardPosition = { left: { base: 3, md: 5 }, right: { base: 3, md: 'auto' }, bottom: { base: '150px', md: '104px' } } as const;
 
-export function InfoCard({ feature, onClose, onFlyHere }: { feature: Feature; onClose: () => void; onFlyHere: () => void }) {
+export function InfoCard({ feature, onClose, onFlyHere, action }: { feature: Feature; onClose: () => void; onFlyHere: () => void; action?: { label: string; onClick: () => void } }) {
   return (
     <GlassCard
       strong
@@ -53,7 +53,10 @@ export function InfoCard({ feature, onClose, onFlyHere }: { feature: Feature; on
           </AccordionItem>
         </Accordion>
       )}
-      <Button mt={3} size="sm" variant="outline" leftIcon={<FiCrosshair aria-hidden="true" />} onClick={onFlyHere}>Re-centre here</Button>
+      <HStack mt={3} spacing={2} wrap="wrap">
+        <Button size="sm" variant="outline" leftIcon={<FiCrosshair aria-hidden="true" />} onClick={onFlyHere}>Re-centre here</Button>
+        {action && <Button size="sm" onClick={action.onClick}>{action.label}</Button>}
+      </HStack>
     </GlassCard>
   );
 }
