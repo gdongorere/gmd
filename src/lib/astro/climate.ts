@@ -60,5 +60,5 @@ export function climateAt(jd: number): ClimateState {
 	else if (f > 0.5) label = 'Ice age — sea level 60–110 m lower';
 	else if (f > 0.15) label = 'Deglaciation / transition';
 	if (kaBp > 118 && kaBp < 130) label = 'Eemian interglacial — warmer and higher seas than today';
-	return { kaBp, seaLevel: sea, iceFraction: f, label, applicable: kaBp >= 0 && kaBp <= ICE_AGE_RANGE_KA };
+	return { kaBp, seaLevel: sea, iceFraction: f, label, applicable: kaBp > 0.5 && kaBp <= ICE_AGE_RANGE_KA };
 }
