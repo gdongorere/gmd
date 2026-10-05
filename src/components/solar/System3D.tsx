@@ -291,9 +291,11 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
             )}
             <Flex {...glass} px={1} py={1} gap={0.5} align="center" role="group" aria-label="Scale ladder" pointerEvents="auto" maxW="100%" overflowX="auto">
               {LADDER.map((st) => (
-                <Button key={st.id} size="xs" flexShrink={0} variant={stop.id === st.id ? 'solid' : 'ghost'} aria-current={stop.id === st.id ? 'step' : undefined} title={st.hint} onClick={() => goStop(st)}>{st.label}</Button>
+                <Button key={st.id} size="xs" flexShrink={0} variant={stop.id === st.id ? 'solid' : 'ghost'} aria-current={stop.id === st.id ? 'step' : undefined} aria-label={st.label} title={st.hint} onClick={() => goStop(st)}>
+                  <Text as="span" display={{ base: 'none', md: 'inline' }}>{st.label}</Text><Text as="span" display={{ base: 'inline', md: 'none' }} aria-hidden="true">{st.short}</Text>
+                </Button>
               ))}
-              <Button size="xs" flexShrink={0} variant="ghost" colorScheme="blue" leftIcon={<FiHome aria-hidden="true" />} onClick={() => void runDescent(0)}>Take me home</Button>
+              <Button size="xs" flexShrink={0} variant="ghost" colorScheme="blue" aria-label="Take me home" leftIcon={<FiHome aria-hidden="true" />} iconSpacing={{ base: 0, md: 2 }} onClick={() => void runDescent(0)}><Text as="span" display={{ base: 'none', md: 'inline' }}>Take me home</Text></Button>
             </Flex>
             <Text fontSize="2xs" color="content.secondary" textShadow="0 1px 6px #000" aria-live="off">
               <span data-testid="system3d-readout">{info}</span> · <span data-testid="scale-badge">{scaleBadge}</span>
