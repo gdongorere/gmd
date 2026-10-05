@@ -74,4 +74,27 @@ test.describe('Time machine', () => {
     const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze();
     expect(results.violations.map((v) => `${v.id}: ${v.nodes[0]?.html.slice(0, 120)}`)).toEqual([]);
   });
+
+  test('Earth shows the Moon, equation of time and the year’s seasons; the 2024 eclipse is flagged', async ({ page }) => {
+    await open(page);
+    await page.goto('/stars?t=2460409.2625');
+    await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
+    await page.keyboard.press('o');
+    await page.getByRole('tab', { name: 'Earth' }).click();
+    await expect(page.getByTestId('moon-disc')).toBeVisible();
+    await expect(page.getByTestId('eclipse-flag')).toContainText(/total solar eclipse/i);
+    await expect(page.getByText('Equation of time')).toBeVisible();
+    await expect(page.getByTestId('year-events')).toContainText('2024: seasons and orbit');
+  });
+
+  test('the orrery labels periods and focuses a planet', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('o');
+    await page.getByRole('button', { name: 'Mars', exact: true }).click();
+    const focus = page.getByTestId('planet-focus');
+    await expect(focus).toContainText('orbital period 687 d');
+    await expect(focus).toContainText('from Earth');
+    await page.getByText('Orbits', { exact: true }).click();
+    await expect(page.getByRole('checkbox', { name: 'Orbits' })).not.toBeChecked();
+  });
 });

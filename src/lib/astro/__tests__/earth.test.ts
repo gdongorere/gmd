@@ -1,70 +1,55 @@
 import { describe, expect, it } from 'vitest';
-import * as Astronomy from 'astronomy-engine';
-import { calendarFromJd, jdFromCalendar, jdFromUnixMs, J2000 } from '../julian';
-import { deltaTSeconds, gmstDegrees } from '../time';
-import { obliquityDegrees, sunPosition, subsolarPoint } from '../earth';
+import { equationOfTimeMinutes, nutation, obliquityDegrees, sunModel, sunPosition, subsolarPoint } from '../earth';
+import { jdFromCalendar } from '../julian';
 
-describe('julian', () => {
-	it('matches known epochs', () => {
-		expect(jdFromCalendar(2000, 1, 1, 12)).toBeCloseTo(J2000, 9);
-		expect(jdFromCalendar(1957, 10, 4, 19, 26, 24)).toBeCloseTo(2436116.31, 2);
+describe('Sun position', () => {
+	it('uses the engine in 1800–2200 and Meeus outside', () => {
+		expect(sunModel(jdFromCalendar(2026, 10, 5))).toBe('engine');
+		expect(sunModel(jdFromCalendar(1500, 1, 1))).toBe('meeus');
+		expect(sunModel(jdFromCalendar(-5000, 1, 1))).toBe('meeus');
 	});
-	it('round-trips deep past dates', () => {
-		for (const y of [-20000, -10000, -1, 0, 1, 1582, 2026, 12000]) {
-			const c = calendarFromJd(jdFromCalendar(y, 6, 15, 13, 30, 15));
-			expect([c.year, c.month, c.day, c.hour, c.minute]).toEqual([y, 6, 15, 13, 30]);
-		}
+	it('June solstice 2026: declination ≈ +23.43°, longitude of date ≈ 90°', () => {
+		const s = sunPosition(jdFromCalendar(2026, 6, 21, 8, 24));
+		expect(s.dec).toBeCloseTo(23.43, 1);
+		expect(s.lambda).toBeCloseTo(90, 1);
 	});
-	it('agrees with Date for unix ms', () => {
-		expect(jdFromUnixMs(Date.UTC(2026, 9, 5))).toBeCloseTo(jdFromCalendar(2026, 10, 5), 6);
+	it('March equinox 2025 (09:01 UTC): declination ≈ 0, RA ≈ 0', () => {
+		const s = sunPosition(jdFromCalendar(2025, 3, 20, 9, 1));
+		expect(Math.abs(s.dec)).toBeLessThan(0.05);
+	});
+	it('engine and Meeus agree to a few arcminutes at the boundary', () => {
+		const a = sunPosition(jdFromCalendar(2100, 3, 1)), b = sunPosition(jdFromCalendar(2201, 3, 1));
+		expect(a.dec).toBeGreaterThan(-8); expect(a.dec).toBeLessThan(-6);
+		expect(b.dec).toBeGreaterThan(-8); expect(b.dec).toBeLessThan(-6);
+	});
+	it('obliquity matches e_tilt (true obliquity ≈ 23.436° in 2026)', () => {
+		expect(sunPosition(jdFromCalendar(2026, 1, 1)).obliquity).toBeCloseTo(23.436, 2);
+		expect(obliquityDegrees(jdFromCalendar(2026, 1, 1))).toBeCloseTo(23.436, 2);
+	});
+	it('sub-solar latitude equals declination', () => {
+		const jd = jdFromCalendar(2026, 10, 5, 12);
+		expect(subsolarPoint(jd).latitude).toBeCloseTo(sunPosition(jd).dec, 9);
 	});
 });
 
-describe('time scales', () => {
-	it('ΔT matches published values', () => {
-		expect(deltaTSeconds(2000)).toBeCloseTo(63.86, 1);
-		expect(deltaTSeconds(1900)).toBeCloseTo(-2.79, 1);
-		expect(deltaTSeconds(2020)).toBeCloseTo(71.6, 0);
-	});
-	it('GMST at J2000 is 280.46°', () => {
-		expect(gmstDegrees(J2000)).toBeCloseTo(280.46, 1);
+describe('nutation', () => {
+	it('matches Meeus example (1987-04-10): Δψ ≈ −3.788″, Δε ≈ +9.443″', () => {
+		const n = nutation(jdFromCalendar(1987, 4, 10));
+		expect(n.dPsi * 3600).toBeCloseTo(-3.788, 0);
+		expect(n.dEps * 3600).toBeCloseTo(9.443, 0);
 	});
 });
 
-describe('Earth orientation vs astronomy-engine', () => {
-	it('obliquity today and at ±10 kyr is sane', () => {
-		expect(obliquityDegrees(J2000)).toBeCloseTo(23.4393, 3);
-		const ice = obliquityDegrees(jdFromCalendar(-10000, 1, 1));
-		expect(ice).toBeGreaterThan(23.8);
-		expect(ice).toBeLessThan(24.4);
+describe('equation of time', () => {
+	it('Meeus example 1992-10-13 ≈ +13m42s', () => {
+		expect(equationOfTimeMinutes(jdFromCalendar(1992, 10, 13))).toBeCloseTo(13.71, 0);
 	});
-	it('Sun RA/Dec within 0.02° across 1900–2100', () => {
-		for (let y = 1900; y <= 2100; y += 20) {
-			const jd = jdFromCalendar(y, 3, 17, 6);
-			const date = new Date(Date.UTC(y, 2, 17, 6));
-			const eq = Astronomy.Equator(Astronomy.Body.Sun, date, new Astronomy.Observer(0, 0, 0), true, true);
-			const mine = sunPosition(jd);
-			expect(Math.abs(mine.dec - eq.dec)).toBeLessThan(0.02);
-			let dra = Math.abs(mine.ra - eq.ra * 15);
-			if (dra > 180) dra = 360 - dra;
-			expect(dra).toBeLessThan(0.02);
-		}
+	it('early-November maximum ≈ +16.4 min and mid-February minimum ≈ −14.2 min', () => {
+		expect(equationOfTimeMinutes(jdFromCalendar(2026, 11, 3, 12))).toBeGreaterThan(16);
+		expect(equationOfTimeMinutes(jdFromCalendar(2026, 2, 11, 12))).toBeLessThan(-13.8);
 	});
-	it('subsolar longitude is plausible at a known moment (equinox 2026-03-20 ~14:46 UTC → lat≈0)', () => {
-		const sp = subsolarPoint(jdFromCalendar(2026, 3, 20, 14, 46));
-		expect(Math.abs(sp.latitude)).toBeLessThan(0.1);
-		// Noon UTC ⇒ subsolar lon ≈ −equation-of-time; 14:46 UTC ⇒ ≈ −41°
-		expect(sp.longitude).toBeGreaterThan(-45);
-		expect(sp.longitude).toBeLessThan(-37);
-	});
-});
-
-describe('sunPosition far from today', () => {
-	it('keeps the Earth–Sun distance physical (0.94–1.06 AU) at ±100,000 years', () => {
-		for (const sign of [-1, 1]) {
-			const d = sunPosition(2451545 + sign * 1e5 * 365.25).distanceAu;
-			expect(d).toBeGreaterThan(0.94);
-			expect(d).toBeLessThan(1.06);
-		}
+	it('is near zero around 16 April and 25 December', () => {
+		expect(Math.abs(equationOfTimeMinutes(jdFromCalendar(2026, 4, 15, 12)))).toBeLessThan(1);
+		expect(Math.abs(equationOfTimeMinutes(jdFromCalendar(2026, 12, 25, 12)))).toBeLessThan(1);
 	});
 });

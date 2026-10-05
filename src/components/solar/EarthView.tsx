@@ -2,13 +2,14 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Box, SimpleGrid, Text } from '@chakra-ui/react';
+import { Badge, Box, Flex, SimpleGrid, Text } from '@chakra-ui/react';
 import { GlobeCanvas } from './GlobeCanvas';
 import { useSimClock } from './useSimClock';
-import { subsolarPoint, obliquityDegrees, sunPosition } from '@/lib/astro/earth';
+import { subsolarPoint, obliquityDegrees, sunPosition, sunModel, equationOfTimeMinutes, nutation, solarElevation } from '@/lib/astro/earth';
 import { gmstDegrees } from '@/lib/astro/time';
 import { climateAt, iceCover, iceEdgeLatitudes, kaBpFromJd } from '@/lib/astro/climate';
-import { moonState } from '@/lib/astro/planets';
+import { eclipseNear, moonState, yearEvents } from '@/lib/astro/planets';
+import { MoonDisc } from './MoonDisc';
 import { calendarFromJd } from '@/lib/astro/julian';
 import { smoothstep } from '@/lib/astro/render';
 import type { Sampler } from '@/lib/astro/render';
@@ -78,6 +79,7 @@ function landColour(a: number): [number, number, number] {
   return LAND_RGB;
 }
 
+const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
 const hours = (deg: number) => { const h = deg / 15; return `${Math.floor(h)}h ${String(Math.floor((h % 1) * 60)).padStart(2, '0')}m`; };
 
 export function EarthView() {
@@ -87,6 +89,11 @@ export function EarthView() {
   const climate = useMemo(() => climateAt(snap.jd), [snap.jd]);
   const moon = moonState(snap.jd);
   const c = calendarFromJd(snap.jd);
+  const eclipse = useMemo(() => eclipseNear(snap.jd), [snap.jd]);
+  const events = useMemo(() => yearEvents(c.year), [c.year]);
+  const eot = equationOfTimeMinutes(snap.jd);
+  const nut = nutation(snap.jd);
+  const model = sunModel(snap.jd);
   const maskRef = useRef(mask);
   maskRef.current = mask;
 
@@ -149,7 +156,40 @@ export function EarthView() {
           <Fact label="Sun’s distance" value={`${sunPosition(snap.jd).distanceAu.toFixed(4)} AU`} />
           {moon && <Fact label="Moon" value={`${moon.phaseName}, ${(moon.illumination * 100).toFixed(0)}% lit`} />}
           {moon && <Fact label="Moon distance" value={`${Math.round(moon.distanceKm).toLocaleString('en-US')} km`} />}
+          <Fact label="Equation of time" value={`${eot >= 0 ? '+' : '−'}${Math.floor(Math.abs(eot))}m ${String(Math.round((Math.abs(eot) % 1) * 60)).padStart(2, '0')}s`} />
+          <Fact label="Nutation (Δψ, Δε)" value={`${(nut.dPsi * 3600).toFixed(1)}″, ${(nut.dEps * 3600).toFixed(1)}″`} />
+          <Fact label="Sun height at Greenwich" value={`${solarElevation(snap.jd, 51.4769, 0).toFixed(1)}° (no refraction)`} />
         </SimpleGrid>
+        <Text fontSize="xs" color="content.muted" mt={2}>
+          Sun position: {model === 'engine' ? 'astronomy-engine VSOP87, apparent place with nutation (1800–2200).' : 'low-precision Meeus series; accuracy degrades with distance from today.'}
+        </Text>
+        {moon && (
+          <Flex mt={4} gap={4} align="center" p={3} border="1px solid" borderColor="line.subtle" borderRadius="lg" bg="surface.inset">
+            <MoonDisc cycle={moon.cycle} />
+            <Box>
+              <Text fontWeight={600}>{moon.phaseName}</Text>
+              <Text fontSize="sm" color="content.secondary">{(moon.illumination * 100).toFixed(0)}% lit · {Math.round(moon.distanceKm).toLocaleString('en-US')} km away</Text>
+              {eclipse && (
+                <Badge colorScheme={eclipse.type === 'solar' ? 'orange' : 'red'} mt={1} data-testid="eclipse-flag">
+                  {eclipse.kind[0].toUpperCase() + eclipse.kind.slice(1)} {eclipse.type} eclipse {Math.abs(eclipse.hoursFromPeak) < 1 ? 'now' : eclipse.hoursFromPeak > 0 ? `in ${Math.round(eclipse.hoursFromPeak)} h` : `${Math.round(-eclipse.hoursFromPeak)} h ago`}
+                </Badge>
+              )}
+            </Box>
+          </Flex>
+        )}
+        {events && (
+          <Box mt={4} p={3} border="1px solid" borderColor="line.subtle" borderRadius="lg" bg="surface.inset" data-testid="year-events">
+            <Text fontWeight={600} mb={1}>{c.year}: seasons and orbit (UTC)</Text>
+            <SimpleGrid columns={2} spacing={1} fontSize="sm">
+              <Text>March equinox</Text><Text>{stamp(events.marchEquinox)}</Text>
+              <Text>June solstice</Text><Text>{stamp(events.juneSolstice)}</Text>
+              <Text>September equinox</Text><Text>{stamp(events.septEquinox)}</Text>
+              <Text>December solstice</Text><Text>{stamp(events.decSolstice)}</Text>
+              <Text>Perihelion</Text><Text>{stamp(events.perihelion)} · {events.perihelionAu.toFixed(4)} AU</Text>
+              <Text>Aphelion</Text><Text>{stamp(events.aphelion)} · {events.aphelionAu.toFixed(4)} AU</Text>
+            </SimpleGrid>
+          </Box>
+        )}
         {climate.applicable && (
           <Box mt={4} p={3} border="1px solid" borderColor="line.subtle" borderRadius="lg" bg="surface.inset">
             <Badge colorScheme="purple" mb={1}>Ice age · schematic</Badge>

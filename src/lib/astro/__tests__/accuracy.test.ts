@@ -33,3 +33,33 @@ describe('planets (astronomy-engine)', () => {
 		expect(m.illumination).toBeLessThan(0.01);
 	});
 });
+
+import { eclipseNear, orbitalPeriodYears, yearEvents } from '../planets';
+
+describe('eclipses, seasons and apsides', () => {
+	it('flags the 2024-04-08 total solar eclipse and the 2025-09-07 total lunar eclipse', () => {
+		const s = eclipseNear(jdFromCalendar(2024, 4, 8, 18, 18))!;
+		expect(s.type).toBe('solar');
+		expect(Math.abs(s.hoursFromPeak)).toBeLessThan(0.5);
+		expect(eclipseNear(jdFromCalendar(2025, 9, 7, 18, 12))!.type).toBe('lunar');
+	});
+	it('does not flag an ordinary day', () => {
+		expect(eclipseNear(jdFromCalendar(2026, 10, 5, 12))).toBeNull();
+	});
+	it('2026 solstices, equinoxes and perihelion', () => {
+		const e = yearEvents(2026)!;
+		expect(new Date(e.juneSolstice).toISOString().slice(0, 13)).toBe('2026-06-21T08');
+		expect(new Date(e.decSolstice).toISOString().slice(0, 10)).toBe('2026-12-21');
+		expect(new Date(e.perihelion).toISOString().slice(0, 10)).toBe('2026-01-03');
+		expect(e.perihelionAu).toBeCloseTo(0.9833, 3);
+		expect(e.aphelionAu).toBeCloseTo(1.0167, 3);
+	});
+	it('rejects years outside the engine range', () => {
+		expect(yearEvents(1500)).toBeNull();
+		expect(yearEvents(NaN)).toBeNull();
+	});
+	it('Kepler periods', () => {
+		expect(orbitalPeriodYears(1.524)).toBeCloseTo(1.88, 2);
+		expect(orbitalPeriodYears(5.203)).toBeCloseTo(11.87, 1);
+	});
+});

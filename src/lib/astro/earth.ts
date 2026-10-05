@@ -1,9 +1,12 @@
 // src/lib/astro/earth.ts
 // Earth's orientation: obliquity, the Sun's apparent position and the sub-solar point.
-// Sun: Meeus ch. 25 (≈0.01° within a few centuries of J2000, degrading over millennia).
+// Sun: astronomy-engine (VSOP87, apparent, with nutation) for 1800–2200; Meeus ch. 25 (≈0.01° within a few
+// centuries of J2000, degrading over millennia) everywhere else.
 // Obliquity: Laskar (1986) polynomial, valid ±10,000 years; clamped beyond that.
 
-import { J2000 } from './julian';
+import * as Astronomy from 'astronomy-engine';
+import { J2000, decimalYearFromJd } from './julian';
+import { unixMsOrNaN } from './clock';
 import { gmstDegrees } from './time';
 
 const D2R = Math.PI / 180;
@@ -26,8 +29,59 @@ export interface SunEquatorial {
 	obliquity: number;
 }
 
-/** Sun's apparent geocentric position (low-precision Meeus 25). `jd` is TT≈UT here (ΔT ≤ 70 s is below the model error). */
+export const ENGINE_SUN_RANGE: [number, number] = [1800, 2200];
+
+/** Apparent Sun of date from astronomy-engine, or null outside its trusted years / JS Date range. */
+function engineSun(jd: number): SunEquatorial | null {
+	const y = decimalYearFromJd(jd);
+	if (y < ENGINE_SUN_RANGE[0] || y > ENGINE_SUN_RANGE[1]) return null;
+	const ms = unixMsOrNaN(jd);
+	if (Number.isNaN(ms)) return null;
+	const time = Astronomy.MakeTime(new Date(ms));
+	const eqd = Astronomy.RotateVector(Astronomy.Rotation_EQJ_EQD(time), Astronomy.GeoVector(Astronomy.Body.Sun, time, true));
+	const eq = Astronomy.EquatorFromVector(eqd);
+	const ecl = Astronomy.SunPosition(time);
+	return { lambda: ecl.elon, ra: eq.ra * 15, dec: eq.dec, distanceAu: eq.dist, obliquity: Astronomy.e_tilt(time).tobl };
+}
+
+/**
+ * Sun's apparent geocentric position. astronomy-engine within 1800–2200, otherwise the low-precision Meeus 25
+ * series (`jd` is TT≈UT there: ΔT ≤ 70 s is below that model's error).
+ */
 export function sunPosition(jd: number): SunEquatorial {
+	return engineSun(jd) ?? meeusSun(jd);
+}
+
+/** Which model {@link sunPosition} used at this instant. */
+export const sunModel = (jd: number): 'engine' | 'meeus' => (engineSun(jd) ? 'engine' : 'meeus');
+
+/** Nutation in longitude and obliquity, degrees (Meeus 22, four largest terms, ≈0.5″). */
+export function nutation(jd: number): { dPsi: number; dEps: number } {
+	const t = (jd - J2000) / 36525;
+	const om = norm360(125.04452 - 1934.136261 * t) * D2R;
+	const l = norm360(280.4665 + 36000.7698 * t) * 2 * D2R;
+	const lm = norm360(218.3165 + 481267.8813 * t) * 2 * D2R;
+	return {
+		dPsi: (-17.2 * Math.sin(om) - 1.32 * Math.sin(l) - 0.23 * Math.sin(lm) + 0.21 * Math.sin(2 * om)) / 3600,
+		dEps: (9.2 * Math.cos(om) + 0.57 * Math.cos(l) + 0.1 * Math.cos(lm) - 0.09 * Math.cos(2 * om)) / 3600,
+	};
+}
+
+/**
+ * Equation of time in minutes (apparent minus mean solar time; positive = sundial ahead of the clock):
+ * 4 min per degree of (mean longitude − 0.0057183° − right ascension + Δψ cos ε), Meeus 28.
+ */
+export function equationOfTimeMinutes(jd: number): number {
+	const t = (jd - J2000) / 36525;
+	const l0 = norm360(280.4664567 + 36000.76982779 * t + 0.03032028 * t * t);
+	const { dPsi } = nutation(jd);
+	const s = sunPosition(jd);
+	let e = l0 - 0.0057183 - s.ra + dPsi * Math.cos(s.obliquity * D2R);
+	e = ((e + 180) % 360 + 360) % 360 - 180;
+	return 4 * e;
+}
+
+function meeusSun(jd: number): SunEquatorial {
 	const t = (jd - J2000) / 36525;
 	const l0 = norm360(280.46646 + 36000.76983 * t + 0.0003032 * t * t);
 	const m = norm360(357.52911 + 35999.05029 * t - 0.0001537 * t * t);
