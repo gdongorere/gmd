@@ -8,7 +8,7 @@ import {
   Box, Button, Flex, HStack, IconButton, Kbd, Menu, MenuButton, MenuItem, MenuList, Modal, ModalBody, ModalCloseButton, ModalContent,
   ModalHeader, ModalOverlay, SimpleGrid, Text, Tooltip, useToast, VisuallyHidden,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiCamera, FiCompass, FiHelpCircle, FiLink, FiPlayCircle, FiSun, FiTag } from 'react-icons/fi';
+import { FiArrowLeft, FiCamera, FiCompass, FiHelpCircle, FiHome, FiLink, FiPlayCircle, FiSun, FiTag } from 'react-icons/fi';
 import GalaxyControls from '@/components/galaxy/GalaxyControls';
 import { ExploreLabels } from './ExploreLabels';
 import { SunUncertainty } from './SunUncertainty';
@@ -34,6 +34,7 @@ const KEYS_HELP: [string, string][] = [
   ['Space', 'Pause or resume time'],
   ['L', 'Toggle labels'],
   ['O', 'Zoom into the Sun and Solar System, or back out'],
+  ['H', 'Take me home: fly from the Solar System down to Earth'],
   ['T', 'Start or end the guided tour'],
   ['G', 'Galaxy settings'],
   ['?', 'This help'],
@@ -55,6 +56,7 @@ export default function ExploreMode() {
   const [labels, setLabels] = useState(true);
   const [help, setHelp] = useState(false);
   const [solar, setSolar] = useState(false);
+  const [descend, setDescend] = useState(0);
   const [announce, setAnnounce] = useState('');
   const target = useRef<CameraPose>(clonePose(VIEWS.tilted));
   const surface = useRef<HTMLDivElement>(null);
@@ -165,6 +167,7 @@ export default function ExploreMode() {
       else if (k === ' ' && !isInteractive(e.target)) simClock().setPlaying(!simClock().playing);
       else if (lower === 'l') setLabels((v) => !v);
       else if (lower === 'o') setSolar((v) => !v);
+      else if (lower === 'h') { setDescend((n) => n + 1); setSolar(true); }
       else if (lower === 't') {
         if (tourStep === null) startTour();
         else endTour();
@@ -256,6 +259,7 @@ export default function ExploreMode() {
               </MenuList>
             </Menu>
             {toolButton(solar ? 'Back to the galaxy' : 'Zoom into the Sun and Solar System (O)', <FiSun />, () => setSolar((v) => !v), solar)}
+            {toolButton('Take me home: descend to Earth (H)', <FiHome />, () => { setDescend((n) => n + 1); setSolar(true); })}
             {toolButton(labelsOn ? 'Hide labels (L)' : 'Show labels (L)', <FiTag />, () => setLabels((v) => !v), labelsOn)}
             {toolButton(tourStep === null ? 'Start guided tour (T)' : 'End guided tour (T)', <FiPlayCircle />, () => (tourStep === null ? startTour() : endTour()), tourStep !== null)}
             {toolButton('Copy link to this view', <FiLink />, share)}
@@ -268,7 +272,7 @@ export default function ExploreMode() {
 
       {/* Cards */}
       {selected && tourStep === null && !solar && <InfoCard feature={selected} onClose={() => setSelected(null)} onFlyHere={() => flyTo(featurePose(selected))} action={selected.id === 'sun' ? { label: 'Zoom into the Sun', onClick: () => setSolar(true) } : undefined} />}
-      {solar && <SolarView onClose={() => setSolar(false)} />}
+      {solar && <SolarView key={descend} onClose={() => setSolar(false)} autoDescend={descend > 0} />}
       {tourStepData && tourStep !== null && (
         <TourCard step={tourStepData} index={tourStep} total={TOUR.length} onPrev={() => goTour(Math.max(0, tourStep - 1))} onNext={() => goTour(tourStep + 1)} onEnd={endTour} />
       )}

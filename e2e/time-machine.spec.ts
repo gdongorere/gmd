@@ -90,11 +90,33 @@ test.describe('Time machine', () => {
   test('the orrery labels periods and focuses a planet', async ({ page }) => {
     await open(page);
     await page.keyboard.press('o');
+    await page.getByRole('tab', { name: 'Top-down' }).click();
     await page.getByRole('button', { name: 'Mars', exact: true }).click();
     const focus = page.getByTestId('planet-focus');
     await expect(focus).toContainText('orbital period 687 d');
     await expect(focus).toContainText('from Earth');
     await page.getByText('Orbits', { exact: true }).click();
     await expect(page.getByRole('checkbox', { name: 'Orbits' })).not.toBeChecked();
+  });
+
+  test('Take me home descends from the Solar System to Earth, with controls always on screen', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('h');
+    const controls = page.getByTestId('descent-controls');
+    await expect(controls).toBeVisible({ timeout: 60_000 });
+    await expect(controls.getByRole('button', { name: /Pause|Resume descent/ })).toBeVisible();
+    await expect(controls.getByRole('button', { name: 'Skip' })).toBeVisible();
+    await expect(page.getByTestId('descent-caption')).toContainText(/Earth, from about 1,400 km up/, { timeout: 80_000 });
+    await expect(page.getByTestId('system3d-readout')).toContainText(/Earth · [\d,]+ km up/);
+  });
+
+  test('the scale ladder jumps between stops and the scale rule is always stated', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('o');
+    await expect(page.getByTestId('scale-badge')).toContainText('Visible scale');
+    await page.getByRole('group', { name: 'Scale ladder' }).getByRole('button', { name: 'Inner planets', exact: true }).click();
+    await expect(page.getByTestId('system3d-readout')).toContainText(/3\.60 AU/, { timeout: 30_000 });
+    await page.getByText('True scale', { exact: true }).click();
+    await expect(page.getByTestId('scale-badge')).toContainText('True scale');
   });
 });

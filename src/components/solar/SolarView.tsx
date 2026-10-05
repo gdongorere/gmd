@@ -1,24 +1,32 @@
 // src/components/solar/SolarView.tsx
 'use client';
 
-import React from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Box, Button, Tab, TabList, TabPanel, TabPanels, Tabs, Text } from '@chakra-ui/react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { FiArrowLeft } from 'react-icons/fi';
 import { EarthView } from './EarthView';
 import { MarsView } from './MarsView';
 import { Orrery } from './Orrery';
+import { System3D, solar3dSupported } from './System3D';
 import { SunInGalaxy } from './SunInGalaxy';
 
-export type SolarTab = 'system' | 'earth' | 'mars' | 'sun';
-const ORDER: SolarTab[] = ['system', 'earth', 'mars', 'sun'];
+export type SolarTab = '3d' | 'system' | 'earth' | 'mars' | 'sun';
+const ORDER: SolarTab[] = ['3d', 'system', 'earth', 'mars', 'sun'];
 
 /**
  * The step down from the galaxy: Sun's neighbourhood, Earth, Mars and the verification card.
  * It covers the galaxy view but leaves the toolbar and the time panel on top.
  */
-export default function SolarView({ onClose, initialTab = 'system' }: { onClose: () => void; initialTab?: SolarTab }) {
+export default function SolarView({ onClose, initialTab, autoDescend = false }: { onClose: () => void; initialTab?: SolarTab; autoDescend?: boolean }) {
   const reduce = useReducedMotion();
+  // The 3D scene needs WebGL and a capable device; everything else is plain 2D and works anywhere.
+  const [supported, setSupported] = useState<boolean | null>(null);
+  useEffect(() => setSupported(solar3dSupported()), []);
+  const [tab, setTab] = useState<number | null>(null);
+  const start = supported === null ? null : initialTab ? ORDER.indexOf(initialTab) : supported ? 0 : 1;
+  const index = tab ?? start;
+  const fallBack = useCallback(() => { setSupported(false); setTab(1); }, []);
   return (
     <motion.section
       aria-label="The Sun and the Solar System"
@@ -33,20 +41,25 @@ export default function SolarView({ onClose, initialTab = 'system' }: { onClose:
         <Text color="content.secondary" mb={4}>
           You’ve zoomed in to the Sun’s place in the Milky Way. Use the clock below to go to any moment: everything here follows it.
         </Text>
-        <Tabs variant="enclosed" isLazy defaultIndex={ORDER.indexOf(initialTab)}>
+        {index !== null && (
+        <Tabs variant="enclosed" isLazy index={index} onChange={setTab}>
           <TabList overflowX="auto" overflowY="hidden">
-            <Tab>Solar system</Tab>
+            <Tab isDisabled={!supported}>3D system</Tab>
+            <Tab>Top-down</Tab>
             <Tab>Earth</Tab>
             <Tab>Mars</Tab>
             <Tab>Sun in the Galaxy</Tab>
           </TabList>
           <TabPanels>
+            <TabPanel px={0}>{supported && <System3D autoDescend={autoDescend} onFallback={fallBack} />}</TabPanel>
             <TabPanel px={0}><Orrery /></TabPanel>
             <TabPanel px={0}><EarthView /></TabPanel>
             <TabPanel px={0}><MarsView /></TabPanel>
             <TabPanel px={0}><SunInGalaxy /></TabPanel>
           </TabPanels>
         </Tabs>
+        )}
+        {supported === false && <Text mt={2} fontSize="xs" color="content.muted">The 3D view needs WebGL and a capable device, so the top-down map is shown instead.</Text>}
       </Box>
       </Box>
     </motion.section>
