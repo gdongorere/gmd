@@ -26,6 +26,7 @@ import { GALAXY } from '@/lib/galaxy/constants';
 const SolarView = dynamic(() => import('@/components/solar/SolarView'), { ssr: false });
 import { useStarfield } from '@/contexts/StarfieldContext';
 import { galaxyBus } from '@/lib/galaxy/bus';
+import { solarBus } from '@/lib/solar/bus';
 import { clonePose, VIEWS, type CameraPose } from '@/lib/galaxy/camera';
 import { decodeView, encodeView, orbit, pan, zoom } from '@/lib/galaxy/explore';
 import { FEATURES, FLY_TO_ORDER, TOUR, featureById, featurePose, type Feature } from '@/lib/galaxy/features';
@@ -257,14 +258,16 @@ export default function ExploreMode() {
     }
   };
   const saveImage = async () => {
-    const blob = await galaxyBus.api?.capture();
+    // Over the Solar System overlay, save what is on screen there, not the galaxy hidden underneath.
+    const inSolar = solar;
+    const blob = inSolar ? await solarBus.capture?.() : await galaxyBus.api?.capture();
     if (!blob) {
-      toast({ title: 'Couldn’t capture the image', status: 'warning', duration: 4000 });
+      toast({ title: inSolar && !solarBus.capture ? 'Save image works on the 3D view' : 'Couldn’t capture the image', status: 'warning', duration: 4000 });
       return;
     }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'milky-way.png';
+    a.download = inSolar ? 'solar-system.png' : 'milky-way.png';
     a.click();
     window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };

@@ -57,7 +57,11 @@ export class SolarScene {
 	distanceAu = 45;
 	azimuth = 0.6;
 	polar = 1.15;
-	trueScale = false;
+	/** Real sizes by default; the enlarged "visible scale" is opt-in. */
+	trueScale = true;
+	private markers!: THREE.Points;
+	/** Vertical shift (px) of the look-at point so the scene sits centred in the space the HUD leaves free. */
+	private centreShift = 0;
 	showOrbits = true;
 	/** Moving the focus between bodies is interpolated: `blendFrom` → `focus` over a flight. */
 	private flight: null | { fromPos: V3 | null; from: BodyId; to: BodyId; fromD: number; toD: number; az0: number; az1: number; po0: number; po1: number; plan: ReturnType<typeof planFlight>; t0: number; resolve: () => void } = null;
@@ -74,6 +78,7 @@ export class SolarScene {
 		this.scene.add(this.sunLight);
 		this.buildBodies();
 		this.buildStars();
+		this.buildMarkers();
 		const gl = document.createElement('canvas'); gl.width = gl.height = 128;
 		const g = gl.getContext('2d')!;
 		const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
@@ -105,6 +110,18 @@ export class SolarScene {
 		ring.rotation.x = Math.PI / 2 - (26.7 * Math.PI) / 180;
 		this.meshes.get('Saturn')!.add(ring);
 		// Orbit lines are sampled once, around the current date; planets barely change orbit over centuries.
+	}
+
+	/** Fixed-size dots at each body so true-scale planets can still be found; they are markers, not to scale. */
+	private buildMarkers() {
+		const g = new THREE.BufferGeometry();
+		g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(BODY_IDS.length * 3), 3));
+		const col = new Float32Array(BODY_IDS.length * 3);
+		BODY_IDS.forEach((id, i) => { const c = new THREE.Color(COLOR[id]); col.set([c.r, c.g, c.b], i * 3); });
+		g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+		this.markers = new THREE.Points(g, new THREE.PointsMaterial({ size: 4, sizeAttenuation: false, vertexColors: true, depthWrite: false, transparent: true, opacity: 0.95 }));
+		this.markers.frustumCulled = false;
+		this.scene.add(this.markers);
 	}
 
 	private buildStars() {
@@ -253,9 +270,27 @@ export class SolarScene {
 	resize(w: number, h: number) {
 		this.renderer.setSize(w, h, false);
 		this.camera.aspect = w / Math.max(1, h);
-		// Portrait screens: the HUD fills the lower third, so lift the focus point up into the free sky.
-		if (w < h * 0.8) this.camera.setViewOffset(w, h, 0, Math.round(h * 0.16), w, h); else this.camera.clearViewOffset();
+		this.applyCentre(w, h);
+	}
+
+	/** Centre the scene in the free space between the HUD's top and bottom edges (`shiftPx` > 0 moves it down). */
+	setCentreShift(shiftPx: number) {
+		const h = this.canvas.clientHeight, w = this.canvas.clientWidth;
+		const s = Math.max(-h * 0.3, Math.min(h * 0.3, Math.round(shiftPx)));
+		if (s === this.centreShift || !w || !h) return;
+		this.centreShift = s;
+		this.applyCentre(w, h);
+	}
+
+	private applyCentre(w: number, h: number) {
+		if (this.centreShift) this.camera.setViewOffset(w, h, 0, -this.centreShift, w, h); else this.camera.clearViewOffset();
 		this.camera.updateProjectionMatrix();
+	}
+
+	/** Renders the current frame and returns it as a PNG (the HUD is not part of the canvas). */
+	capture(): Promise<Blob | null> {
+		this.render(this.jd);
+		return new Promise((resolve) => this.canvas.toBlob((b) => resolve(b), 'image/png'));
 	}
 
 	/** Advances the scene to `jd` and draws one frame; returns screen positions for labels, or null when the date is outside JS Date's range (nothing is drawn). */
@@ -292,6 +327,10 @@ export class SolarScene {
 			// Never let an enlarged body swallow the camera: cap by distance to the camera.
 			(id === 'Earth' ? this.earthGroup : obj).scale.setScalar(Math.min(radius, camToBody * 0.45));
 		}
+		const mp = this.markers.geometry.getAttribute('position') as THREE.BufferAttribute;
+		BODY_IDS.forEach((id, i) => { const r = rel(id); mp.setXYZ(i, r[0], r[1], r[2]); });
+		mp.needsUpdate = true;
+		this.markers.visible = this.trueScale && d > 1e-4; // up close the real discs are visible themselves
 		this.earthGroup.rotation.set(earthSpin.tiltRad, 0, 0);
 		this.earthSpin.rotation.set(0, earthSpin.gmstRad, 0);
 		this.orientMars(jd, this.bodyPosition('Mars'));

@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Button, Checkbox, Flex, HStack, Popover, PopoverBody, PopoverContent, PopoverTrigger, Text, VisuallyHidden } from '@chakra-ui/react';
 import { FiChevronDown, FiHome, FiPause, FiPlay, FiSkipForward, FiSliders, FiX } from 'react-icons/fi';
 import { simClock } from '@/lib/astro/clock';
+import { solarBus } from '@/lib/solar/bus';
 import { LADDER, describeDistance, describeLightTime, nearestStop, EARTH_RADIUS_AU, KM_PER_AU, type LadderStop } from '@/lib/solar/ladder';
 import { BODY_IDS, SolarScene, webglAvailable, type BodyId, type ScreenLabel } from '@/lib/solar/scene';
 
@@ -35,7 +36,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
   const pinch = useRef(0);
   const [focus, setFocus] = useState<BodyId>('Sun');
   const [distance, setDistance] = useState(70);
-  const [trueScale, setTrueScale] = useState(false);
+  const [trueScale, setTrueScale] = useState(true);
   const [orbits, setOrbits] = useState(true);
   const [labels, setLabels] = useState(true);
   const [caption, setCaption] = useState('');
@@ -51,6 +52,10 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
   }, [caption]);
   const descentRef = useRef<{ cancelled: boolean } | null>(null);
   const activity = useRef(0);
+  const hudTop = useRef<HTMLDivElement>(null);
+  const hudBottom = useRef<HTMLDivElement>(null);
+  const hudRef = useRef(hud);
+  hudRef.current = hud;
   const poke = () => { activity.current = performance.now(); };
   const opts = useRef({ labels });
   opts.current = { labels };
@@ -77,6 +82,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
     } catch { /* keep the default */ }
     activity.current = performance.now();
     sceneRef.current = scene;
+    solarBus.capture = () => scene.capture();
     void scene.loadTextures().then(() => { activity.current = performance.now(); });
     const fit = () => {
       const r = holder.current!.getBoundingClientRect();
@@ -106,6 +112,13 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
       }
       vslow = dt > 250 && scene.renderer.getPixelRatio() <= RATIOS[RATIOS.length - 1] + 0.01 ? vslow + 1 : Math.max(0, vslow - 2);
       if (vslow > 20 && !fallbackCalled) { fallbackCalled = true; onFallback?.(); }
+      // Keep the scene centred in the free space between the HUD's top menus and its bottom strip.
+      if (frames % 15 === 0) {
+        const h = el.clientHeight;
+        const top = hudTop.current?.getBoundingClientRect().bottom ?? 0;
+        const bottom = hudBottom.current?.getBoundingClientRect().top ?? h;
+        scene.setCentreShift(hudRef.current && top > 0 ? (top + Math.min(bottom, h)) / 2 - h / 2 : 0);
+      }
       const frame = scene.render(simClock().jd());
       setOutOfRange((o) => (o === (frame === null) ? o : frame === null));
       const list = frame ?? [];
@@ -122,7 +135,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
       if (++frames % 6 === 0) { setFocus((f) => (f === scene.displayFocus ? f : scene.displayFocus)); setDistance(scene.focusDistanceAu); }
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); if (descentRef.current) descentRef.current.cancelled = true; scene.dispose(); el.remove(); sceneRef.current = null; };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); if (descentRef.current) descentRef.current.cancelled = true; scene.dispose(); el.remove(); sceneRef.current = null; if (solarBus.capture) solarBus.capture = null; };
   }, [onFallback]);
 
   useEffect(() => { if (sceneRef.current) sceneRef.current.trueScale = trueScale; activity.current = performance.now(); }, [trueScale]);
@@ -229,7 +242,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
       {hud && (
         <>
           {/* Top left, under the page header: two small menus */}
-          <HStack position="absolute" left={3} top={{ base: '144px', md: '104px' }} spacing={1}>
+          <HStack ref={hudTop} position="absolute" left={3} top={{ base: '144px', md: '104px' }} spacing={1}>
             <Popover isLazy placement="bottom-start">
               <PopoverTrigger><Button {...glass} size="xs" h="28px" rightIcon={<FiChevronDown aria-hidden="true" />} aria-label="Bodies">{focus}</Button></PopoverTrigger>
               <PopoverContent w="auto" bg="surface.raised" borderColor="line.strong" _focusVisible={{ boxShadow: 'none' }}>
@@ -259,7 +272,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
           </HStack>
 
           {/* Bottom: one slim strip */}
-          <Flex position="absolute" left={3} right={3} bottom={{ base: '232px', md: '200px' }} direction="column" align="center" gap={1} pointerEvents="none">
+          <Flex ref={hudBottom} position="absolute" left={3} right={3} pl={{ base: '34px', md: 0 }} bottom={{ base: '232px', md: '200px' }} direction="column" align="center" gap={1} pointerEvents="none">
             {showCaption && <Text {...glass} px={3} py={1} fontSize="sm" textAlign="center" maxW="640px" data-testid="descent-caption">{caption}</Text>}
             {chapter && descent && (
               <HStack {...glass} px={2} py={1} spacing={1} wrap="wrap" justify="center" pointerEvents="auto" data-testid="descent-controls" role="group" aria-label="Descent controls">
