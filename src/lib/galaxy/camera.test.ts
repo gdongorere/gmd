@@ -105,9 +105,9 @@ describe('feature catalogue', () => {
     }
   });
 
-  it('places the Sun 26,000 ly from the centre and tour steps point at real features', () => {
+  it('places the Sun 26,673 ly from the centre and tour steps point at real features', () => {
     const sun = FEATURES.find((f) => f.id === 'sun')!;
-    expect(Math.hypot(sun.position[0], sun.position[2]) * 100).toBeCloseTo(26000, -2);
+    expect(Math.hypot(sun.position[0], sun.position[2]) * 100).toBeCloseTo(26673, -2);
     for (const step of TOUR) if (step.featureId) expect(FEATURES.some((f) => f.id === step.featureId)).toBe(true);
   });
 });

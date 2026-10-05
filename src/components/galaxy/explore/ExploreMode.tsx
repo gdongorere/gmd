@@ -294,7 +294,7 @@ export default function ExploreMode() {
                   <Kbd flexShrink={0} maxW="55%" whiteSpace="normal" textAlign="right">{keys}</Kbd>
                 </Flex>
               ))}
-              <Text fontSize="sm" color="content.muted" mt={2}>Time speeds: {SPEEDS.map((s) => `${s}×`).join(', ')}. One solar orbit (≈ 230 million years) is about four minutes at 1×.</Text>
+              <Text fontSize="sm" color="content.muted" mt={2}>Time speeds: {SPEEDS.map((s) => `${s}×`).join(', ')}. One solar orbit (≈ 203 million years) is about four minutes at 1×.</Text>
             </SimpleGrid>
           </ModalBody>
         </ModalContent>
