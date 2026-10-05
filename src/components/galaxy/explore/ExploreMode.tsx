@@ -8,7 +8,7 @@ import {
   Box, Button, Flex, HStack, IconButton, Kbd, Menu, MenuButton, MenuItem, MenuList, Modal, ModalBody, ModalCloseButton, ModalContent,
   ModalHeader, ModalOverlay, SimpleGrid, Text, Tooltip, useToast, VisuallyHidden,
 } from '@chakra-ui/react';
-import { FiArrowLeft, FiCamera, FiCompass, FiHelpCircle, FiHome, FiLink, FiPlayCircle, FiSun, FiTag } from 'react-icons/fi';
+import { FiArrowLeft, FiCamera, FiCompass, FiEye, FiEyeOff, FiHelpCircle, FiHome, FiLink, FiPlayCircle, FiSun, FiTag } from 'react-icons/fi';
 import GalaxyControls from '@/components/galaxy/GalaxyControls';
 import { ExploreLabels } from './ExploreLabels';
 import { SunUncertainty } from './SunUncertainty';
@@ -45,6 +45,7 @@ const KEYS_HELP: [string, string][] = [
   ['Shift + T', 'Time-travel tour: today, Mars 2018, ice age, dinosaurs, a galactic year ago'],
   ['L', 'Toggle labels'],
   ['O', 'Zoom into the Sun and Solar System, or back out'],
+  ['I', 'Hide or show the interface, for a clean view'],
   ['H', 'Take me home: fly from the Solar System down to Earth'],
   ['T', 'Start or end the guided tour'],
   ['G', 'Galaxy settings'],
@@ -70,6 +71,7 @@ export default function ExploreMode() {
   const [descend, setDescend] = useState(0);
   const [solarTab, setSolarTab] = useState<SolarTab | undefined>(undefined);
   const [timeTour, setTimeTour] = useState<number | null>(null);
+  const [hudHidden, setHudHidden] = useState(false);
   const [announce, setAnnounce] = useState('');
   const target = useRef<CameraPose>(clonePose(VIEWS.tilted));
   const surface = useRef<HTMLDivElement>(null);
@@ -223,6 +225,7 @@ export default function ExploreMode() {
       else if (k === ' ' && !isInteractive(e.target)) simClock().setPlaying(!simClock().playing);
       else if (lower === 'l') setLabels((v) => !v);
       else if (lower === 'o') setSolar((v) => !v);
+      else if (lower === 'i') setHudHidden((v) => !v);
       else if (lower === 'h') { setDescend((n) => n + 1); setSolar(true); }
       else if (lower === 't') {
         if (tourStep === null) startTour();
@@ -296,7 +299,7 @@ export default function ExploreMode() {
       <ExploreLabels enabled={labelsOn} selectedId={selected?.id ?? null} onSelect={showFeature} />
 
       {/* Top bar */}
-      <Flex position="fixed" top={3} left={3} right={3} zIndex={40} justify="space-between" align="flex-start" gap={3} pointerEvents="none">
+      <Flex position="fixed" top={3} left={3} right={3} zIndex={40} justify="space-between" align="flex-start" gap={3} pointerEvents="none" display={hudHidden ? 'none' : 'flex'}>
         <HStack pointerEvents="auto" spacing={2}>
           <Button as={NextLink} href="/" variant="glass" leftIcon={<FiArrowLeft aria-hidden="true" />} h="44px" display={{ base: 'none', md: 'inline-flex' }}>Back to site</Button>
           <IconButton as={NextLink} href="/" aria-label="Back to site" icon={<FiArrowLeft />} variant="glass" boxSize="44px" display={{ base: 'inline-flex', md: 'none' }} />
@@ -328,7 +331,7 @@ export default function ExploreMode() {
 
       {/* Cards */}
       {selected && tourStep === null && !solar && <InfoCard feature={selected} onClose={() => setSelected(null)} onFlyHere={() => flyTo(featurePose(selected))} action={selected.id === 'sun' ? { label: 'Zoom into the Sun', onClick: () => setSolar(true) } : undefined} />}
-      {solar && <SolarView key={`${descend}-${solarTab ?? ''}`} onClose={() => setSolar(false)} autoDescend={descend > 0} initialTab={solarTab} />}
+      {solar && <SolarView key={`${descend}-${solarTab ?? ''}`} onClose={() => setSolar(false)} autoDescend={descend > 0} initialTab={solarTab} hudHidden={hudHidden} />}
       {tourStepData && tourStep !== null && (
         <TourCard step={tourStepData} index={tourStep} total={TOUR.length} onPrev={() => goTour(Math.max(0, tourStep - 1))} onNext={() => goTour(tourStep + 1)} onEnd={endTour} />
       )}
@@ -359,6 +362,7 @@ export default function ExploreMode() {
         align="flex-end"
         gap={{ base: 4, md: 8 }}
         pointerEvents="none"
+        display={hudHidden ? 'none' : 'flex'}
       >
         <Box display={{ base: 'none', md: solar ? 'none' : 'block' }} pointerEvents="auto" bg="surface.glass" border="1px solid" borderColor="line.subtle" borderRadius="xl" px={4} py={2} backdropFilter="blur(10px)">
           <ScaleBar distLy={dist} />
@@ -368,7 +372,12 @@ export default function ExploreMode() {
         </Box>
       </Flex>
 
-      <GalaxyControls raised />
+      {!hudHidden && <GalaxyControls raised />}
+      <IconButton
+        aria-label={hudHidden ? 'Show the interface (I)' : 'Hide the interface (I)'} aria-pressed={hudHidden} icon={hudHidden ? <FiEye /> : <FiEyeOff />}
+        position="fixed" left={3} bottom={{ base: 'calc(12px + env(safe-area-inset-bottom))', md: 5 }} zIndex={50} size="sm" variant="glass" opacity={hudHidden ? 0.45 : 0.8} _hover={{ opacity: 1 }} _focusVisible={{ opacity: 1 }}
+        onClick={() => setHudHidden((v) => !v)} data-testid="hud-toggle"
+      />
 
       <VisuallyHidden role="status" aria-live="polite">{announce}</VisuallyHidden>
 

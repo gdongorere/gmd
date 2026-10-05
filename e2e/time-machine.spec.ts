@@ -116,6 +116,7 @@ test.describe('Time machine', () => {
     await expect(page.getByTestId('scale-badge')).toContainText('Visible scale');
     await page.getByRole('group', { name: 'Scale ladder' }).getByRole('button', { name: 'Inner planets', exact: true }).click();
     await expect(page.getByTestId('system3d-readout')).toContainText(/3\.60 AU/, { timeout: 30_000 });
+    await page.getByRole('button', { name: 'View' }).click();
     await page.getByText('True scale', { exact: true }).click();
     await expect(page.getByTestId('scale-badge')).toContainText('True scale');
   });
@@ -192,5 +193,19 @@ test.describe('Time machine', () => {
     await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
     await page.keyboard.press('o');
     await expect(page.getByTestId('system3d-out-of-range')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('the interface can be hidden for a clean view and brought back', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('o');
+    const ladder = page.getByRole('group', { name: 'Scale ladder' });
+    await expect(ladder).toBeVisible();
+    await page.keyboard.press('i');
+    await expect(ladder).toBeHidden();
+    await expect(page.getByRole('group', { name: 'Date and time' })).toBeHidden();
+    await expect(page.getByTestId('system3d')).toBeVisible();
+    await page.getByTestId('hud-toggle').click();
+    await expect(ladder).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Date and time' })).toBeVisible();
   });
 });
