@@ -116,7 +116,7 @@ test.describe('Time machine', () => {
     await expect(page.getByTestId('scale-badge')).toContainText('Visible scale');
     await page.getByRole('group', { name: 'Scale ladder' }).getByRole('button', { name: 'Inner planets', exact: true }).click();
     await expect(page.getByTestId('system3d-readout')).toContainText(/3\.60 AU/, { timeout: 30_000 });
-    await page.getByRole('button', { name: 'View' }).click();
+    await page.getByTestId('system3d-root').getByRole('button', { name: 'View', exact: true }).click();
     await page.getByText('True scale', { exact: true }).click();
     await expect(page.getByTestId('scale-badge')).toContainText('True scale');
   });

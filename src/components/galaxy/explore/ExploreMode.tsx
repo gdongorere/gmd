@@ -214,7 +214,7 @@ export default function ExploreMode() {
         return;
       }
       // While the full-screen solar overlay is open, the galaxy underneath must not react.
-      if (solar && lower !== 'o' && lower !== 'h' && k !== 'Escape' && k !== ' ') return;
+      if (solar && lower !== 'o' && lower !== 'h' && lower !== 'i' && k !== 'Escape' && k !== ' ') return;
       const step = e.shiftKey ? 0.16 : 0.07;
       if (k === 'ArrowLeft' || lower === 'a') orbit(target.current, step, 0);
       else if (k === 'ArrowRight' || lower === 'd') orbit(target.current, -step, 0);
