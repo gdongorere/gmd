@@ -6,7 +6,7 @@ import { Box, SimpleGrid, Stack, Text } from '@chakra-ui/react';
 import { Fact } from './EarthView';
 import { useSimClock } from './useSimClock';
 import {
-  CONSTANT_SOURCES, SUN_GALAXY, SUN_ORBIT_MYR, SUN_TOTAL_SPEED, sunDistanceLy, sunDistanceUncertaintyLy, sunHeightLy, sunHeightPc,
+  CONSTANT_SOURCES, CONSTANTS_PROVENANCE_NOTE, SUN_GALAXY, SUN_ORBIT_MYR, SUN_TOTAL_SPEED, sunDistanceLy, sunDistanceUncertaintyLy, sunHeightLy, sunHeightPc,
 } from '@/lib/astro/galaxySun';
 import { DAYS_PER_YEAR, J2000 } from '@/lib/astro/julian';
 
@@ -96,7 +96,8 @@ export function SunInGalaxy() {
             <Text as="span" color="content.muted"> — {SUN_GALAXY.peculiar.source}</Text>
           </Box>
         </Stack>
-        <Text fontSize="xs" color="content.muted" mt={3}>
+        <Text fontSize="xs" color="content.muted" mt={3}>{CONSTANTS_PROVENANCE_NOTE}</Text>
+        <Text fontSize="xs" color="content.muted" mt={2}>
           Lap time and speed follow from Sgr A*’s reflex proper motion ({SUN_GALAXY.omegaMasPerYr.value} mas/yr). Older papers give 220–230 km/s and 225–250 Myr; the newer, more precise values are used here.
         </Text>
       </Box>

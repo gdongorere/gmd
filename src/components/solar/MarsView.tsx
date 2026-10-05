@@ -78,7 +78,7 @@ export function MarsView() {
           {storm ? <Badge colorScheme="orange">Dust storm</Badge> : isDustSeason(m.ls) ? <Badge colorScheme="yellow">Dust-storm season</Badge> : <Badge>Clear season</Badge>}
         </HStack>
         <Text color="content.secondary" mb={3}>
-          Jump to a real storm, then run time forward and watch the surface disappear. The surface is a schematic: well-known bright and dark regions placed by hand, not a photograph.
+          Jump to a real storm, then run time forward and watch the surface disappear. The surface is a schematic: well-known bright and dark regions placed by hand, not a photograph. Storm onsets (Mars Year and Ls) are recalled from the literature and not yet independently verified.
         </Text>
         <SimpleGrid columns={2} spacing={3}>
           <Fact label="Season (Ls)" value={`${m.ls.toFixed(1)}° · ${marsSeason(m.ls)}`} />

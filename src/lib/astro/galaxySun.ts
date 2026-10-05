@@ -23,8 +23,9 @@ export const SUN_GALAXY = {
 	R0: { value: 8.178, plus: 0.026, minus: 0.026, unit: 'kpc', source: 'GRAVITY Collaboration 2019, A&A 625, L10' },
 	/** Height above the plane (Bennett & Bovy 2019, MNRAS 482, 1417): 20.8 ± 0.3 pc. */
 	z0: { value: 20.8, plus: 0.3, minus: 0.3, unit: 'pc', source: 'Bennett & Bovy 2019, MNRAS 482, 1417' },
-	/** Proper motion of Sgr A* in galactic longitude (Reid & Brunthaler 2004/2020): 6.379 ± 0.026 mas/yr. */
-	omegaMasPerYr: { value: 6.379, plus: 0.026, minus: 0.026, unit: 'mas/yr', source: 'Reid & Brunthaler 2020, ApJ 892, 39' },
+	/** Proper motion of Sgr A* in galactic longitude, Reid & Brunthaler (2004): 6.379 ± 0.026 mas/yr.
+	 *  (Their 2020 re-analysis, ApJ 892, 39, gives a slightly larger, tighter value that is not used here.) */
+	omegaMasPerYr: { value: 6.379, plus: 0.026, minus: 0.026, unit: 'mas/yr', source: 'Reid & Brunthaler 2004, ApJ 616, 872' },
 	/** Circular speed at the Sun (Reid et al. 2019 maser parallaxes): 236 ± 7 km/s. */
 	theta0: { value: 236, plus: 7, minus: 7, unit: 'km/s', source: 'Reid et al. 2019, ApJ 885, 131' },
 	/** Solar peculiar motion w.r.t. the local standard of rest (Schönrich, Binney & Dehnen 2010). */
@@ -38,6 +39,11 @@ export const SUN_GALAXY = {
 	/** Vertical oscillation period through the plane ≈ 80–90 Myr (harmonic approximation). */
 	verticalPeriodMyr: { value: 84, plus: 8, minus: 8, unit: 'Myr', source: 'Binney & Tremaine 2008; Bahcall & Bahcall 1985' },
 } as const;
+
+/** True only once every constant above has been checked against its original paper. */
+export const CONSTANTS_VERIFIED = false;
+export const CONSTANTS_PROVENANCE_NOTE =
+	'Values are recalled from the cited papers and were not re-checked against the originals; treat them as unverified until confirmed.';
 
 export const CONSTANT_SOURCES = Object.entries(SUN_GALAXY).map(([key, v]) => ({ key, ...v }));
 
