@@ -7,7 +7,7 @@ import { deltaTUncertaintySeconds } from './time';
 import { marsConfidence } from './mars';
 import { planetConfidence } from './planets';
 import { climateAt } from './climate';
-import { SUN_GALAXY } from './galaxySun';
+import { MYR_PER_KPC_PER_KMS, SUN_GALAXY, sunPositionStatement } from './galaxySun';
 
 export type Level = 'precise' | 'good' | 'approximate' | 'schematic' | 'n/a';
 
@@ -50,7 +50,13 @@ export function accuracyReport(jd: number, nowJd: number): AccuracyRow[] {
 		rows.push({ id: 'earth', topic: 'Earth rotation & seasons', level: 'approximate', note: 'Seasons and tilt are right; time of day is not meaningful beyond a few hours.' });
 	} else {
 		rows.push({ id: 'time', topic: 'Time scale', level: 'n/a', note: `The date is a proleptic-calendar label: Earth’s spin is uncertain by ${formatDuration(unc)}, so time of day means nothing here.` });
-		rows.push({ id: 'earth', topic: 'Earth rotation & seasons', level: y >= -1e6 && y <= 1e6 ? 'approximate' : 'n/a', note: y >= -1e6 && y <= 1e6 ? 'Season and tilt are modelled; day/night phase is arbitrary.' : 'Earth’s orientation is not modelled this far from today.' });
+		rows.push({ id: 'earth', topic: 'Earth rotation & seasons', level: Math.abs(y) <= 1e6 ? 'approximate' : 'n/a',
+			note: Math.abs(y) <= 10000
+				? 'Tilt and seasons follow the Laskar series; day/night phase is arbitrary.'
+				: Math.abs(y) <= 1e6
+					? 'Beyond ±10,000 years the tilt is held at its edge value (the real tilt cycles between about 22.1° and 24.5°) and the orbit is not evolved; day/night phase is arbitrary.'
+					: 'Earth’s tilt and orbit are not modelled this far from today.',
+		});
 	}
 
 	const pc = planetConfidence(jd);
@@ -73,11 +79,11 @@ export function accuracyReport(jd: number, nowJd: number): AccuracyRow[] {
 				: 'Mars season drifts out of step the further we go from 1874–2100; storms cannot be known.',
 	});
 
-	const armUncertaintyDeg = Math.abs(yearsFromNow / 1e6) * (SUN_GALAXY.armPattern.plus + SUN_GALAXY.armPattern.minus) / 2 / 977.792 * (180 / Math.PI);
+	const armUncertaintyDeg = Math.abs(yearsFromNow / 1e6) * (SUN_GALAXY.armPattern.plus + SUN_GALAXY.armPattern.minus) / 2 / MYR_PER_KPC_PER_KMS * (180 / Math.PI);
 	rows.push({
 		id: 'galaxy', topic: 'Sun in the Galaxy',
 		level: Math.abs(yearsFromNow) < 1e6 ? 'good' : 'approximate',
-		note: `Sun is 26,673 ± 85 ly from Sgr A* (GRAVITY 2019). Spiral arms drift with an uncertain pattern speed: ±${armUncertaintyDeg < 1 ? armUncertaintyDeg.toFixed(2) : Math.round(armUncertaintyDeg)}° at this epoch.`,
+		note: `Sun is ${sunPositionStatement()} Spiral arms drift with an uncertain pattern speed: ±${armUncertaintyDeg < 1 ? armUncertaintyDeg.toFixed(2) : Math.round(armUncertaintyDeg)}° at this epoch.`,
 	});
 
 	const c = climateAt(jd);

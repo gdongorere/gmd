@@ -16,7 +16,6 @@ export function SunInGalaxy() {
   const snap = useSimClock(1000);
   const years = (snap.jd - J2000) / DAYS_PER_YEAR;
   const lapsSinceJ2000 = years / (SUN_ORBIT_MYR * 1e6);
-  const zNow = sunHeightPc(years - (Date.now() / 86400000 + 2440587.5 - J2000) / DAYS_PER_YEAR); // relative to today's z0
 
   // Diagram A: Sgr A* → Sun to scale along the line of sight.
   const W = 640, x0 = 56, x1 = W - 56;
@@ -101,7 +100,6 @@ export function SunInGalaxy() {
           Lap time and speed follow from Sgr A*’s reflex proper motion ({SUN_GALAXY.omegaMasPerYr.value} mas/yr). Older papers give 220–230 km/s and 225–250 Myr; the newer, more precise values are used here.
         </Text>
       </Box>
-      <span hidden>{zNow}</span>
     </Stack>
   );
 }

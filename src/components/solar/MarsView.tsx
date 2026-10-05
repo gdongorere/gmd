@@ -24,7 +24,7 @@ export function MarsView() {
   const conf = marsConfidence(snap.jd);
   const prev = nearestStorm(snap.jd, -1);
   const next = nearestStorm(snap.jd, 1);
-  const go = (jd: number) => { simClock().setJd(jd - 12); simClock().setPlaying(true); simClock().setRate(1); };
+  const go = (jd: number) => { simClock().setJd(jd); simClock().setPlaying(true); simClock().setRate(1); };
 
   const sampler = (jd: number): Sampler => {
     const ori = marsOrientation(jd);

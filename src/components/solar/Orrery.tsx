@@ -20,6 +20,7 @@ export function Orrery() {
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     let size = 640;
+    let lastJd = NaN;
     const fit = () => {
       const w = Math.min(canvas.parentElement?.clientWidth ?? 640, 760);
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -27,11 +28,11 @@ export function Orrery() {
       canvas.width = w * dpr; canvas.height = w * dpr;
       canvas.style.width = `${w}px`; canvas.style.height = `${w}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      lastJd = NaN; // resizing clears the bitmap, so force a repaint
     };
     fit();
     const ro = new ResizeObserver(fit);
     if (canvas.parentElement) ro.observe(canvas.parentElement);
-    let lastJd = NaN;
     const draw = () => {
       if (document.hidden) return;
       const jd = simClock().jd();

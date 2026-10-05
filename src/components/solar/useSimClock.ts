@@ -9,7 +9,10 @@ export function useSimClock(intervalMs = 250): ClockSnapshot {
   const clock = simClock();
   const [snap, setSnap] = useState<ClockSnapshot>(() => clock.snapshot());
   useEffect(() => {
-    const update = () => setSnap(clock.snapshot());
+    const update = () => setSnap((prev) => {
+      const next = clock.snapshot();
+      return prev.jd === next.jd && prev.rate === next.rate && prev.playing === next.playing && prev.live === next.live ? prev : next;
+    });
     update();
     const id = window.setInterval(update, intervalMs);
     const off = clock.subscribe(update);

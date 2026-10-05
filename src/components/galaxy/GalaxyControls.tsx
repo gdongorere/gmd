@@ -258,7 +258,7 @@ function ControlsPanel({ onClose }: { onClose: () => void }) {
                 <AccordionButton px={0}><Text flex={1} textAlign="left" fontWeight={600}>Motion</Text><AccordionIcon /></AccordionButton>
                 <AccordionPanel px={0}>
                   <Stack spacing={4}>
-                    <SliderRow id="gx-orbit" label="One solar orbit takes" value={config.orbitMinutes} min={1} max={30} step={0.5} format={(v) => `${v} min`} valueText={(v) => `${v} minutes per orbit of the Sun, about 200 million years`} onChange={(v) => updateConfig('orbitMinutes', v)} />
+                    <SliderRow id="gx-orbit" label="One solar orbit takes (home page)" value={config.orbitMinutes} min={1} max={30} step={0.5} format={(v) => `${v} min`} valueText={(v) => `${v} minutes per orbit of the Sun, about 200 million years`} onChange={(v) => updateConfig('orbitMinutes', v)} />
                     <SliderRow id="gx-roll" label="Scroll roll" value={config.scrollRoll} min={0} max={720} step={15} format={(v) => `${v}°`} valueText={(v) => `${v} degrees`} onChange={(v) => updateConfig('scrollRoll', v)} />
                     <SliderRow id="gx-parallax" label="3D parallax" value={config.parallax} min={0} max={2} step={0.05} format={x2} onChange={(v) => updateConfig('parallax', v)} />
                     <SwitchRow id="gx-override" label="Keep motion with reduced-motion on" hint="Your device asks for less motion. Turn this on to override that for the galaxy only." checked={config.overrideReducedMotion} onChange={(v) => updateConfig('overrideReducedMotion', v)} />

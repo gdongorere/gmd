@@ -58,3 +58,13 @@ describe('Earth orientation vs astronomy-engine', () => {
 		expect(sp.longitude).toBeLessThan(-37);
 	});
 });
+
+describe('sunPosition far from today', () => {
+	it('keeps the Earth–Sun distance physical (0.94–1.06 AU) at ±100,000 years', () => {
+		for (const sign of [-1, 1]) {
+			const d = sunPosition(2451545 + sign * 1e5 * 365.25).distanceAu;
+			expect(d).toBeGreaterThan(0.94);
+			expect(d).toBeLessThan(1.06);
+		}
+	});
+});

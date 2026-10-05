@@ -88,12 +88,12 @@ export function localClock(jdUt: number, zone: string, longitudeDeg: number, uni
 	if (withinDate && y >= 1884) {
 		try {
 			const dtf = new Intl.DateTimeFormat('en-GB', {
-				timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'short', day: '2-digit',
+				timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: '2-digit',
 				hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
 			});
 			const parts = dtf.formatToParts(new Date(unixMs));
 			const get = (t: string) => parts.find((x) => x.type === t)?.value ?? '';
-			const asUtc = Date.UTC(+get('year'), ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(get('month')),
+			const asUtc = Date.UTC(+get('year'), +get('month') - 1,
 				+get('day'), +get('hour'), +get('minute'), +get('second'));
 			const offsetMinutes = Math.round((asUtc - Math.floor(unixMs / 1000) * 1000) / 60000);
 			return {

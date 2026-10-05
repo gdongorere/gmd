@@ -50,9 +50,12 @@ export interface ClimateState {
 	applicable: boolean;
 }
 
+/** Thousand years before present, where "present" is 1950 CE by convention. */
+export const kaBpFromJd = (jd: number) => (1950 - decimalYearFromJd(jd)) / 1000;
+
 /** The state to show at a Julian Date; `applicable` is false when the view is out of the schematic's range. */
 export function climateAt(jd: number): ClimateState {
-	const kaBp = (2000 - decimalYearFromJd(jd)) / 1000 + 0.05; // BP is counted from 1950 CE
+	const kaBp = kaBpFromJd(jd);
 	const f = iceFraction(kaBp);
 	const sea = seaLevelMetres(kaBp);
 	let label = 'Interglacial — ice like today';

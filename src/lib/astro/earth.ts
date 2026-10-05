@@ -31,7 +31,8 @@ export function sunPosition(jd: number): SunEquatorial {
 	const t = (jd - J2000) / 36525;
 	const l0 = norm360(280.46646 + 36000.76983 * t + 0.0003032 * t * t);
 	const m = norm360(357.52911 + 35999.05029 * t - 0.0001537 * t * t);
-	const e = 0.016708634 - 0.000042037 * t - 0.0000001267 * t * t;
+	// The linear polynomial is only valid for a few millennia; Earth's eccentricity stays within ≈ 0.0034–0.058.
+	const e = Math.min(0.058, Math.max(0.0034, 0.016708634 - 0.000042037 * t - 0.0000001267 * t * t));
 	const mr = m * D2R;
 	const c = (1.914602 - 0.004817 * t - 0.000014 * t * t) * Math.sin(mr)
 		+ (0.019993 - 0.000101 * t) * Math.sin(2 * mr) + 0.000289 * Math.sin(3 * mr);

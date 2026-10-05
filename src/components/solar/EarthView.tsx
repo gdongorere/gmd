@@ -7,7 +7,7 @@ import { GlobeCanvas } from './GlobeCanvas';
 import { useSimClock } from './useSimClock';
 import { subsolarPoint, obliquityDegrees, sunPosition } from '@/lib/astro/earth';
 import { gmstDegrees } from '@/lib/astro/time';
-import { climateAt, iceCover, iceEdgeLatitudes } from '@/lib/astro/climate';
+import { climateAt, iceCover, iceEdgeLatitudes, kaBpFromJd } from '@/lib/astro/climate';
 import { moonState } from '@/lib/astro/planets';
 import { calendarFromJd } from '@/lib/astro/julian';
 import { smoothstep } from '@/lib/astro/render';
@@ -60,15 +60,22 @@ function useLandMask() {
 const PALETTE: [number, number, number, number][] = [
   [0, 46, 104, 56], [10, 62, 114, 60], [20, 148, 136, 92], [30, 164, 142, 94], [42, 100, 126, 72], [55, 70, 112, 64], [65, 128, 140, 118], [78, 172, 176, 170],
 ];
+/** Scratch result reused across calls: this runs per land pixel, so it must not allocate. */
+const LAND_RGB: [number, number, number] = [0, 0, 0];
 function landColour(a: number): [number, number, number] {
   for (let i = 1; i < PALETTE.length; i++) {
     if (a <= PALETTE[i][0]) {
-      const t = (a - PALETTE[i - 1][0]) / (PALETTE[i][0] - PALETTE[i - 1][0]);
-      return [0, 1, 2].map((k) => PALETTE[i - 1][k + 1] + (PALETTE[i][k + 1] - PALETTE[i - 1][k + 1]) * t) as [number, number, number];
+      const p0 = PALETTE[i - 1], p1 = PALETTE[i];
+      const t = (a - p0[0]) / (p1[0] - p0[0]);
+      LAND_RGB[0] = p0[1] + (p1[1] - p0[1]) * t;
+      LAND_RGB[1] = p0[2] + (p1[2] - p0[2]) * t;
+      LAND_RGB[2] = p0[3] + (p1[3] - p0[3]) * t;
+      return LAND_RGB;
     }
   }
   const l = PALETTE[PALETTE.length - 1];
-  return [l[1], l[2], l[3]];
+  LAND_RGB[0] = l[1]; LAND_RGB[1] = l[2]; LAND_RGB[2] = l[3];
+  return LAND_RGB;
 }
 
 const hours = (deg: number) => { const h = deg / 15; return `${Math.floor(h)}h ${String(Math.floor((h % 1) * 60)).padStart(2, '0')}m`; };
@@ -85,7 +92,7 @@ export function EarthView() {
 
   const sampler = (jd: number): Sampler => {
     const f = climateAt(jd).iceFraction;
-    const edge = iceEdgeLatitudes(jd2ka(jd));
+    const edge = iceEdgeLatitudes(kaBpFromJd(jd));
     const m = maskRef.current;
     return (lat, lon, light, out) => {
       const day = smoothstep(-0.12, 0.2, light);
@@ -98,7 +105,6 @@ export function EarthView() {
       or += glint; og += glint; ob += glint;
       if (Math.abs(lat) > 80 - f * 14) { or += (225 - or) * 0.8; og += (232 - og) * 0.8; ob += (240 - ob) * 0.8; }
       if (cov > 0.004) {
-        const a = Math.abs(lat);
         const [lr0, lg0, lb0] = landColour(Math.abs(lat));
         let lr = lr0, lg = lg0, lb = lb0;
         const ice = iceCover(lat, lon, f, edge);
@@ -154,13 +160,11 @@ export function EarthView() {
             <Text fontSize="xs" color="content.muted" mt={1}>Ice edges are drawn from a sea-level curve, not mapped. Coastlines are today’s: exposed continental shelf is not drawn.</Text>
           </Box>
         )}
-        {c.year < -271000 || c.year > 271000 ? <Text fontSize="sm" color="content.muted" mt={3}>Earth’s orientation is not modelled this far from today.</Text> : null}
+        {Math.abs(c.year) > 10000 ? <Text fontSize="sm" color="content.muted" mt={3}>Beyond ±10,000 years Earth’s tilt is held at its edge value and the orbit is not evolved, so the tilt and Sun distance above are approximate.</Text> : null}
       </Box>
     </SimpleGrid>
   );
 }
-
-const jd2ka = (jd: number) => (2000 - (2000 + (jd - 2451545) / 365.25)) / 1000 + 0.05;
 
 export function Fact({ label, value }: { label: string; value: string }) {
   return (

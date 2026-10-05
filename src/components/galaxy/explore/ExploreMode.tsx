@@ -152,6 +152,8 @@ export default function ExploreMode() {
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target) || help) return;
       const k = e.key;
       const lower = k.toLowerCase();
+      // While the full-screen solar overlay is open, the galaxy underneath must not react.
+      if (solar && lower !== 'o' && k !== 'Escape' && k !== ' ') return;
       const step = e.shiftKey ? 0.16 : 0.07;
       if (k === 'ArrowLeft' || lower === 'a') orbit(target.current, step, 0);
       else if (k === 'ArrowRight' || lower === 'd') orbit(target.current, -step, 0);

@@ -1,4 +1,5 @@
 // src/lib/galaxy/constants.ts
+import { SUN_OMEGA_KMS_KPC } from '@/lib/astro/galaxySun';
 // Real-world Milky Way parameters, scaled for the WebGL scene.
 //
 // Scene scale: 1 world unit = 100 light-years. The galactic plane is the
@@ -88,11 +89,9 @@ export function relativeOmega(r: number): number {
 }
 
 /** Bar pattern speed relative to the Sun's angular speed. */
-export const PATTERN_OMEGA =
-	(DYNAMICS.patternSpeed * DYNAMICS.kpcPerUnit) / SUN_OMEGA;
+export const PATTERN_OMEGA = DYNAMICS.patternSpeed / SUN_OMEGA_KMS_KPC;
 /** Spiral-arm pattern speed relative to the Sun's angular speed. */
-export const ARM_PATTERN_OMEGA =
-	(DYNAMICS.armPatternSpeed * DYNAMICS.kpcPerUnit) / SUN_OMEGA;
+export const ARM_PATTERN_OMEGA = DYNAMICS.armPatternSpeed / SUN_OMEGA_KMS_KPC;
 
 /**
  * Spiral arms as logarithmic spirals θ(r) = phase + ln(r / sagittariusRadiusAtSun) / tan(pitch).

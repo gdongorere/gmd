@@ -614,7 +614,8 @@ export async function createGalaxyEngine(options: EngineOptions): Promise<Galaxy
 			if (explore?.active && explore.galacticYears) {
 				// Simulated time drives the rotation directly: one lap of the Sun = SUN_ORBIT_MYR.
 				const years = explore.galacticYears();
-				shared.uTime.value = (2 * Math.PI * years) / (SUN_ORBIT_MYR * 1e6);
+				// Reduced-motion users get a calmer 0.1× spin (the date label is unchanged).
+				shared.uTime.value = ((2 * Math.PI * years) / (SUN_ORBIT_MYR * 1e6)) * (reducedMotion ? 0.1 : 1);
 				elapsedMyr = years / 1e6;
 			} else {
 				const step = dt * ((2 * Math.PI) / orbitSeconds) * (reducedMotion ? 0.1 : 1) * timeScale;

@@ -170,7 +170,7 @@ export function TimePanel({ compact = false }: { compact?: boolean }) {
     return order.indexOf(earth) < order.indexOf('good') ? earth : rows.find((r) => r.id === 'time')!.level;
   }, [snap.jd, nowJd]);
 
-  const rateLabel = snap.rate === 1 ? 'Real time' : `${snap.rate < 0 ? '−' : ''}${RATE_PRESETS.find((p) => p.secondsPerSecond === Math.abs(snap.rate))?.label ?? `${Math.abs(snap.rate)}×`}`;
+  const rateLabel = snap.rate === 1 ? 'Real time' : snap.rate === -1 ? 'Real time, reversed' : `${snap.rate < 0 ? '−' : ''}${RATE_PRESETS.find((p) => p.secondsPerSecond === Math.abs(snap.rate))?.label ?? `${Math.abs(snap.rate)}×`}`;
   const direction = snap.rate < 0 ? -1 : 1;
   const setPreset = (sps: number) => { clock.setRate(direction * sps); clock.setPlaying(true); };
 

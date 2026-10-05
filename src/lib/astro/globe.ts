@@ -117,10 +117,8 @@ export function marsOrientation(jdUt: number): MarsClock {
 	const mtc = (((msd % 1) + 1) % 1) * 24;
 	// Equation of time (degrees), Allison & McEwen 2000 eq. 20: uses the equation-of-centre part of Ls.
 	const d = jdTt - J2000;
-	const m = norm360(19.3871 + 0.52402073 * d);
 	const alphaFms = 270.3863 + 0.52403840 * d;
 	const lsMinusMean = norm360(ls - alphaFms + 180) - 180; // ν − M + PBS
-	void m;
 	const eotDeg = 2.861 * Math.sin(2 * ls * D2R) - 0.071 * Math.sin(4 * ls * D2R) + 0.002 * Math.sin(6 * ls * D2R) - lsMinusMean;
 	const lon = ((-(15 * (mtc - 12) + eotDeg) + 540) % 360 + 360) % 360 - 180;
 	const lat = Math.asin(Math.sin(MARS_OBLIQUITY * D2R) * Math.sin(ls * D2R)) * R2D;
