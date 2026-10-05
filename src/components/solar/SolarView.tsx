@@ -42,18 +42,18 @@ export default function SolarView({ onClose, initialTab, autoDescend = false }: 
           : { pt: '72px', pb: { base: '280px', md: '210px' }, px: { base: 3, md: 8 } })}
       >
       <Box maxW={hud ? 'none' : '1100px'} mx="auto" sx={hud ? { '& > *': { pointerEvents: 'auto' } } : undefined}>
-        <Button size="sm" variant={hud ? 'glass' : 'outline'} leftIcon={<FiArrowLeft aria-hidden="true" />} onClick={onClose} mb={hud ? 2 : 4}>Back to the galaxy</Button>
+        <Button size="sm" position="relative" zIndex={1} variant={hud ? 'glass' : 'outline'} leftIcon={<FiArrowLeft aria-hidden="true" />} onClick={onClose} mb={hud ? 2 : 4}>Back to the galaxy</Button>
         {!hud && <Text color="content.secondary" mb={4}>
           You’ve zoomed in to the Sun’s place in the Milky Way. Use the clock below to go to any moment: everything here follows it.
         </Text>}
         {index !== null && (
         <Tabs variant="enclosed" isLazy index={index} onChange={setTab}>
-          <TabList overflowX="auto" overflowY="hidden" {...(hud ? { bg: 'rgba(8,10,20,0.62)', backdropFilter: 'blur(10px)', borderRadius: 'xl', display: 'inline-flex', maxW: '100%' } : {})}>
-            <Tab isDisabled={!supported}>3D system</Tab>
-            <Tab>Top-down</Tab>
-            <Tab>Earth</Tab>
-            <Tab>Mars</Tab>
-            <Tab>Sun in the Galaxy</Tab>
+          <TabList overflowX="auto" overflowY="hidden" {...(hud ? { position: 'relative' as const, zIndex: 1, bg: 'rgba(8,10,20,0.62)', backdropFilter: 'blur(10px)', borderRadius: 'xl', display: 'inline-flex', maxW: '100%' } : {})}>
+            <Tab whiteSpace="nowrap" fontSize={{ base: 'sm', md: 'md' }} isDisabled={!supported}>3D system</Tab>
+            <Tab whiteSpace="nowrap" fontSize={{ base: 'sm', md: 'md' }}>Top-down</Tab>
+            <Tab whiteSpace="nowrap" fontSize={{ base: 'sm', md: 'md' }}>Earth</Tab>
+            <Tab whiteSpace="nowrap" fontSize={{ base: 'sm', md: 'md' }}>Mars</Tab>
+            <Tab whiteSpace="nowrap" fontSize={{ base: 'sm', md: 'md' }}>Sun in the Galaxy</Tab>
           </TabList>
           <TabPanels>
             <TabPanel px={0} p={hud ? 0 : undefined}>{supported && <System3D autoDescend={autoDescend} onFallback={fallBack} />}</TabPanel>

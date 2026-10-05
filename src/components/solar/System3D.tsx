@@ -216,7 +216,7 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
       {!ready && !outOfRange && <Flex position="absolute" inset={0} align="center" justify="center" pointerEvents="none"><Text color="content.muted">Loading the Solar System…</Text></Flex>}
 
       {/* Left: bodies */}
-      <Flex {...glass} position="absolute" left={3} top={{ base: '128px', md: '132px' }} bottom={{ base: '250px', md: '215px' }} direction="column" gap={1} p={2} overflowY="auto" aria-label="Focus a body" role="group">
+      <Flex {...glass} display={{ base: 'none', md: 'flex' }} position="absolute" left={3} top="164px" bottom="215px" direction="column" gap={1} p={2} overflowY="auto" aria-label="Focus a body" role="group">
         {BODY_IDS.map((id) => (
           <Button key={id} size="xs" justifyContent="flex-start" variant={focus === id ? 'solid' : 'ghost'} aria-pressed={focus === id} onClick={() => fly(id)}>{id}</Button>
         ))}
@@ -224,17 +224,19 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
       </Flex>
 
       {/* Right: display options */}
-      <Box {...glass} position="absolute" right={3} top={{ base: '128px', md: '132px' }} p={3} maxW={{ base: '160px', md: '230px' }}>
+      <Box {...glass} position="absolute" right={3} top={{ base: '176px', md: '164px' }} p={3} maxW={{ base: '150px', md: '230px' }}>
         <Flex direction="column" gap={1}>
           <Checkbox size="sm" isChecked={trueScale} onChange={(e) => setTrueScale(e.target.checked)}>True scale</Checkbox>
           <Checkbox size="sm" isChecked={orbits} onChange={(e) => setOrbits(e.target.checked)}>Orbits</Checkbox>
           <Checkbox size="sm" isChecked={labels} onChange={(e) => setLabels(e.target.checked)}>Labels</Checkbox>
         </Flex>
-        <Text mt={2} fontSize="2xs" color="content.muted" data-testid="scale-badge">{scaleBadge}. Positions: astronomy-engine. Earth’s spin and tilt are exact for the chosen time; Mars’s axis is approximate.</Text>
+        <Text mt={2} fontSize="2xs" color="content.muted" data-testid="scale-badge">
+          {scaleBadge}.<Text as="span" display={{ base: 'none', md: 'inline' }}> Positions: astronomy-engine. Earth’s spin and tilt are exact for the chosen time; Mars’s axis is approximate.</Text>
+        </Text>
       </Box>
 
       {/* Bottom: caption, descent controls, scale ladder, readout */}
-      <Flex position="absolute" left={3} right={3} bottom={{ base: '250px', md: '215px' }} direction="column" align="center" gap={2} pointerEvents="none">
+      <Flex position="absolute" left={3} right={3} bottom={{ base: '235px', md: '215px' }} direction="column" align="center" gap={2} pointerEvents="none">
         {caption && <Text {...glass} px={4} py={2} fontSize={{ base: 'sm', md: 'md' }} textAlign="center" maxW="760px" data-testid="descent-caption">{caption}</Text>}
         {chapter && descent && (
           <HStack {...glass} px={3} py={2} spacing={2} wrap="wrap" justify="center" pointerEvents="auto" data-testid="descent-controls" role="group" aria-label="Descent controls">
@@ -251,7 +253,12 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
             <Button size="sm" variant="outline" leftIcon={<FiX aria-hidden="true" />} onClick={stopDescent}>Exit descent</Button>
           </HStack>
         )}
-        <Flex {...glass} px={2} py={2} gap={2} wrap="wrap" justify="center" align="center" role="group" aria-label="Scale ladder" pointerEvents="auto">
+        <HStack {...glass} display={{ base: 'flex', md: 'none' }} maxW="100%" overflowX="auto" spacing={1} px={2} py={1} pointerEvents="auto" role="group" aria-label="Focus a body (compact)">
+          {BODY_IDS.map((id) => (
+            <Button key={id} size="xs" flexShrink={0} variant={focus === id ? 'solid' : 'ghost'} aria-pressed={focus === id} onClick={() => fly(id)}>{id}</Button>
+          ))}
+        </HStack>
+        <Flex {...glass} px={2} py={2} gap={1} wrap="wrap" justify="center" align="center" role="group" aria-label="Scale ladder" pointerEvents="auto">
           {LADDER.map((s) => (
             <Button key={s.id} size="sm" variant={stop.id === s.id ? 'solid' : 'ghost'} aria-current={stop.id === s.id ? 'step' : undefined} title={s.hint} onClick={() => goStop(s)}>{s.label}</Button>
           ))}

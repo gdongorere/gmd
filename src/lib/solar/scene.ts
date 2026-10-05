@@ -253,6 +253,8 @@ export class SolarScene {
 	resize(w: number, h: number) {
 		this.renderer.setSize(w, h, false);
 		this.camera.aspect = w / Math.max(1, h);
+		// Portrait screens: the HUD fills the lower third, so lift the focus point up into the free sky.
+		if (w < h * 0.8) this.camera.setViewOffset(w, h, 0, Math.round(h * 0.16), w, h); else this.camera.clearViewOffset();
 		this.camera.updateProjectionMatrix();
 	}
 
