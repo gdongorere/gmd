@@ -26,6 +26,7 @@ export default function SolarView({ onClose, initialTab, autoDescend = false }: 
   const [tab, setTab] = useState<number | null>(null);
   const start = supported === null ? null : initialTab && (initialTab !== '3d' || supported) ? ORDER.indexOf(initialTab) : supported ? 0 : 1;
   const index = tab ?? start;
+  const hud = index === 0;
   const fallBack = useCallback(() => { setSupported(false); setTab(1); }, []);
   return (
     <motion.section
@@ -35,15 +36,19 @@ export default function SolarView({ onClose, initialTab, autoDescend = false }: 
       transition={{ duration: reduce ? 0 : 0.8, ease: [0.16, 1, 0.3, 1] }}
       style={{ position: 'fixed', inset: 0, zIndex: 20, background: 'rgba(4,6,14,0.96)', backdropFilter: 'blur(6px)', overflowY: 'auto' }}
     >
-      <Box pt="72px" pb={{ base: '280px', md: '210px' }} px={{ base: 3, md: 8 }}>
-      <Box maxW="1100px" mx="auto">
-        <Button size="sm" variant="outline" leftIcon={<FiArrowLeft aria-hidden="true" />} onClick={onClose} mb={4}>Back to the galaxy</Button>
-        <Text color="content.secondary" mb={4}>
+      <Box
+        {...(hud
+          ? { position: 'fixed' as const, top: '64px', left: 3, right: { base: 3, md: '260px' }, zIndex: 25, pointerEvents: 'none' as const }
+          : { pt: '72px', pb: { base: '280px', md: '210px' }, px: { base: 3, md: 8 } })}
+      >
+      <Box maxW={hud ? 'none' : '1100px'} mx="auto" sx={hud ? { '& > *': { pointerEvents: 'auto' } } : undefined}>
+        <Button size="sm" variant={hud ? 'glass' : 'outline'} leftIcon={<FiArrowLeft aria-hidden="true" />} onClick={onClose} mb={hud ? 2 : 4}>Back to the galaxy</Button>
+        {!hud && <Text color="content.secondary" mb={4}>
           You’ve zoomed in to the Sun’s place in the Milky Way. Use the clock below to go to any moment: everything here follows it.
-        </Text>
+        </Text>}
         {index !== null && (
         <Tabs variant="enclosed" isLazy index={index} onChange={setTab}>
-          <TabList overflowX="auto" overflowY="hidden">
+          <TabList overflowX="auto" overflowY="hidden" {...(hud ? { bg: 'rgba(8,10,20,0.62)', backdropFilter: 'blur(10px)', borderRadius: 'xl', display: 'inline-flex', maxW: '100%' } : {})}>
             <Tab isDisabled={!supported}>3D system</Tab>
             <Tab>Top-down</Tab>
             <Tab>Earth</Tab>
@@ -51,7 +56,7 @@ export default function SolarView({ onClose, initialTab, autoDescend = false }: 
             <Tab>Sun in the Galaxy</Tab>
           </TabList>
           <TabPanels>
-            <TabPanel px={0}>{supported && <System3D autoDescend={autoDescend} onFallback={fallBack} />}</TabPanel>
+            <TabPanel px={0} p={hud ? 0 : undefined}>{supported && <System3D autoDescend={autoDescend} onFallback={fallBack} />}</TabPanel>
             <TabPanel px={0}><Orrery /></TabPanel>
             <TabPanel px={0}><EarthView /></TabPanel>
             <TabPanel px={0}><MarsView /></TabPanel>

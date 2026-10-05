@@ -188,72 +188,77 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
   void KM_PER_AU;
 
   const chapter = descent ? LADDER[descent.index] : null;
+  const fly = (id: BodyId) => { stopDescent(); void goTo(id, id === 'Sun' ? 0.05 : id === 'Moon' ? 0.0004 : defaultDistance(id)); };
+  const glass = { bg: 'rgba(8,10,20,0.62)', border: '1px solid', borderColor: 'line.subtle', borderRadius: 'xl', backdropFilter: 'blur(10px)' } as const;
+  // The scene fills the screen; every control is a HUD layer above it. The HUD stays clear of the page toolbar (top right)
+  // and the clock (bottom centre), which belong to the page.
   return (
-    <Box>
+    <Box position="fixed" inset={0} zIndex={0} bg="#02030a" data-testid="system3d-root">
       <Box
-        ref={holder} position="relative" h={{ base: '56dvh', md: '58dvh' }} minH="340px" borderRadius="xl" overflow="hidden" bg="#02030a"
-        border="1px solid" borderColor="line.subtle" style={{ touchAction: 'none', cursor: 'grab' }}
+        ref={holder} position="absolute" inset={0} style={{ touchAction: 'none', cursor: 'grab' }}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} data-testid="system3d"
-      >
+      />
+      <Box position="absolute" inset={0} pointerEvents="none" overflow="hidden">
         {labels && BODY_IDS.map((id) => (
           <Box
             as="button" type="button" key={id} ref={(el: HTMLButtonElement | null) => { labelEls.current[id] = el; }}
             position="absolute" left={0} top={0} opacity={0} pointerEvents="none" fontSize="xs" fontWeight={600} color="white" px={2} h="24px" ml="8px" mt="-12px"
             borderRadius="full" bg="rgba(10,10,10,0.6)" border="1px solid" borderColor="line.strong" whiteSpace="nowrap" willChange="transform"
-            aria-label={`Fly to ${id}`} onClick={() => { stopDescent(); void goTo(id, id === 'Sun' ? 0.05 : id === 'Moon' ? 0.0004 : defaultDistance(id)); }}
+            aria-label={`Fly to ${id}`} onClick={() => fly(id)}
           >{id}</Box>
         ))}
-        {outOfRange && (
-          <Flex position="absolute" inset={0} align="center" justify="center" bg="rgba(2,3,10,0.85)" px={6} textAlign="center" data-testid="system3d-out-of-range">
-            <Text color="content.secondary">The planets can be placed for about ±270,000 years around today. At this date only the galaxy and the date itself are meaningful; use the clock to come back.</Text>
-          </Flex>
-        )}
-        {!ready && !outOfRange && <Flex position="absolute" inset={0} align="center" justify="center"><Text color="content.muted">Loading the Solar System…</Text></Flex>}
-        {caption && (
-          <Box position="absolute" left={0} right={0} bottom={0} px={4} py={3} bgGradient="linear(to-t, rgba(2,3,10,0.9), rgba(2,3,10,0))" pointerEvents="none">
-            <Text fontSize={{ base: 'sm', md: 'md' }} data-testid="descent-caption">{caption}</Text>
-          </Box>
-        )}
+      </Box>
+      {outOfRange && (
+        <Flex position="absolute" inset={0} align="center" justify="center" bg="rgba(2,3,10,0.85)" px={6} textAlign="center" data-testid="system3d-out-of-range">
+          <Text color="content.secondary">The planets can be placed for about ±270,000 years around today. At this date only the galaxy and the date itself are meaningful; use the clock to come back.</Text>
+        </Flex>
+      )}
+      {!ready && !outOfRange && <Flex position="absolute" inset={0} align="center" justify="center" pointerEvents="none"><Text color="content.muted">Loading the Solar System…</Text></Flex>}
+
+      {/* Left: bodies */}
+      <Flex {...glass} position="absolute" left={3} top={{ base: '128px', md: '132px' }} bottom={{ base: '250px', md: '215px' }} direction="column" gap={1} p={2} overflowY="auto" aria-label="Focus a body" role="group">
+        {BODY_IDS.map((id) => (
+          <Button key={id} size="xs" justifyContent="flex-start" variant={focus === id ? 'solid' : 'ghost'} aria-pressed={focus === id} onClick={() => fly(id)}>{id}</Button>
+        ))}
+        <Button size="xs" justifyContent="flex-start" variant="outline" onClick={() => { stopDescent(); void goTo('Sun', LADDER[0].distanceAu); }}>Reset view</Button>
+      </Flex>
+
+      {/* Right: display options */}
+      <Box {...glass} position="absolute" right={3} top={{ base: '128px', md: '132px' }} p={3} maxW={{ base: '160px', md: '230px' }}>
+        <Flex direction="column" gap={1}>
+          <Checkbox size="sm" isChecked={trueScale} onChange={(e) => setTrueScale(e.target.checked)}>True scale</Checkbox>
+          <Checkbox size="sm" isChecked={orbits} onChange={(e) => setOrbits(e.target.checked)}>Orbits</Checkbox>
+          <Checkbox size="sm" isChecked={labels} onChange={(e) => setLabels(e.target.checked)}>Labels</Checkbox>
+        </Flex>
+        <Text mt={2} fontSize="2xs" color="content.muted" data-testid="scale-badge">{scaleBadge}. Positions: astronomy-engine. Earth’s spin and tilt are exact for the chosen time; Mars’s axis is approximate.</Text>
       </Box>
 
-      {/* Descent controls: always visible while it runs */}
-      {chapter && descent && (
-        <HStack mt={3} spacing={2} wrap="wrap" data-testid="descent-controls" role="group" aria-label="Descent controls">
-          <Text fontSize="sm" color="content.secondary" mr={2}>Chapter {descent.index + 1} of {LADDER.length}: {chapter.label}</Text>
-          {!reduce && (
-            <Button size="sm" variant="outline" leftIcon={descent.paused ? <FiPlay aria-hidden="true" /> : <FiPause aria-hidden="true" />}
-              onClick={() => { const p = !descent.paused; sceneRef.current?.setFlightPaused(p); setDescent({ ...descent, paused: p }); }}>
-              {descent.paused ? 'Resume descent' : 'Pause'}
-            </Button>
-          )}
-          {reduce && descent.index > 0 && <Button size="sm" variant="outline" onClick={() => void runDescent(descent.index - 1)}>Back</Button>}
-          {reduce && descent.index < LADDER.length - 1 && <Button size="sm" variant="outline" onClick={() => void runDescent(descent.index + 1)}>Next</Button>}
-          <Button size="sm" variant="outline" leftIcon={<FiSkipForward aria-hidden="true" />} onClick={() => { stopDescent(); sceneRef.current?.finishFlight(); void goStop(LADDER[LADDER.length - 1]); }}>Skip</Button>
-          <Button size="sm" variant="outline" leftIcon={<FiX aria-hidden="true" />} onClick={stopDescent}>Exit descent</Button>
-        </HStack>
-      )}
-
-      {/* Scale ladder */}
-      <Flex mt={3} gap={2} wrap="wrap" align="center" role="group" aria-label="Scale ladder">
-        {LADDER.map((s) => (
-          <Button key={s.id} size="sm" variant={stop.id === s.id ? 'solid' : 'outline'} aria-current={stop.id === s.id ? 'step' : undefined} title={s.hint} onClick={() => goStop(s)}>{s.label}</Button>
-        ))}
-        <Button size="sm" variant="solid" colorScheme="blue" leftIcon={<FiHome aria-hidden="true" />} onClick={() => void runDescent(0)}>Take me home</Button>
+      {/* Bottom: caption, descent controls, scale ladder, readout */}
+      <Flex position="absolute" left={3} right={3} bottom={{ base: '250px', md: '215px' }} direction="column" align="center" gap={2} pointerEvents="none">
+        {caption && <Text {...glass} px={4} py={2} fontSize={{ base: 'sm', md: 'md' }} textAlign="center" maxW="760px" data-testid="descent-caption">{caption}</Text>}
+        {chapter && descent && (
+          <HStack {...glass} px={3} py={2} spacing={2} wrap="wrap" justify="center" pointerEvents="auto" data-testid="descent-controls" role="group" aria-label="Descent controls">
+            <Text fontSize="sm" color="content.secondary" mr={2}>Chapter {descent.index + 1} of {LADDER.length}: {chapter.label}</Text>
+            {!reduce && (
+              <Button size="sm" variant="outline" leftIcon={descent.paused ? <FiPlay aria-hidden="true" /> : <FiPause aria-hidden="true" />}
+                onClick={() => { const p = !descent.paused; sceneRef.current?.setFlightPaused(p); setDescent({ ...descent, paused: p }); }}>
+                {descent.paused ? 'Resume descent' : 'Pause'}
+              </Button>
+            )}
+            {reduce && descent.index > 0 && <Button size="sm" variant="outline" onClick={() => void runDescent(descent.index - 1)}>Back</Button>}
+            {reduce && descent.index < LADDER.length - 1 && <Button size="sm" variant="outline" onClick={() => void runDescent(descent.index + 1)}>Next</Button>}
+            <Button size="sm" variant="outline" leftIcon={<FiSkipForward aria-hidden="true" />} onClick={() => { stopDescent(); sceneRef.current?.finishFlight(); void goStop(LADDER[LADDER.length - 1]); }}>Skip</Button>
+            <Button size="sm" variant="outline" leftIcon={<FiX aria-hidden="true" />} onClick={stopDescent}>Exit descent</Button>
+          </HStack>
+        )}
+        <Flex {...glass} px={2} py={2} gap={2} wrap="wrap" justify="center" align="center" role="group" aria-label="Scale ladder" pointerEvents="auto">
+          {LADDER.map((s) => (
+            <Button key={s.id} size="sm" variant={stop.id === s.id ? 'solid' : 'ghost'} aria-current={stop.id === s.id ? 'step' : undefined} title={s.hint} onClick={() => goStop(s)}>{s.label}</Button>
+          ))}
+          <Button size="sm" variant="solid" colorScheme="blue" leftIcon={<FiHome aria-hidden="true" />} onClick={() => void runDescent(0)}>Take me home</Button>
+        </Flex>
+        <Text fontSize="sm" color="content.secondary" textShadow="0 1px 6px #000" aria-live="off" data-testid="system3d-readout">{info}</Text>
       </Flex>
-      <Text mt={2} fontSize="sm" color="content.secondary" aria-live="off" data-testid="system3d-readout">{info}</Text>
-
-      <Flex mt={2} gap={2} wrap="wrap" aria-label="Focus a body" role="group">
-        {BODY_IDS.map((id) => (
-          <Button key={id} size="xs" variant={focus === id ? 'solid' : 'outline'} aria-pressed={focus === id} onClick={() => { stopDescent(); void goTo(id, id === 'Sun' ? 0.05 : id === 'Moon' ? 0.0004 : defaultDistance(id)); }}>{id}</Button>
-        ))}
-        <Button size="xs" variant="outline" onClick={() => { stopDescent(); void goTo('Sun', LADDER[0].distanceAu); }}>Reset view</Button>
-      </Flex>
-      <Flex mt={3} gap={4} wrap="wrap">
-        <Checkbox isChecked={trueScale} onChange={(e) => setTrueScale(e.target.checked)}>True scale</Checkbox>
-        <Checkbox isChecked={orbits} onChange={(e) => setOrbits(e.target.checked)}>Orbits</Checkbox>
-        <Checkbox isChecked={labels} onChange={(e) => setLabels(e.target.checked)}>Labels</Checkbox>
-      </Flex>
-      <Text mt={2} fontSize="xs" color="content.muted" data-testid="scale-badge">{scaleBadge}. Planet positions come from astronomy-engine. Earth’s spin and tilt are exact for the chosen time; Mars’s axis is approximate; ring and moon detail are decorative.</Text>
       <VisuallyHidden role="status" aria-live="polite">{caption}</VisuallyHidden>
     </Box>
   );
