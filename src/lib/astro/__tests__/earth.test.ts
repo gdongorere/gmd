@@ -65,3 +65,12 @@ describe('obliquity swing', () => {
 		expect(e(2000)).toBeCloseTo(23.439, 2);
 	});
 });
+
+describe('deep-time Sun uses TT (ΔT is hours at the ice-age presets)', () => {
+	it('Meeus fallback at the LGM differs from a UT-as-TT evaluation by more than a minute of Sun motion', () => {
+		const jd = jdFromCalendar(-19050, 1, 15, 12);
+		const a = sunPosition(jd), b = sunPosition(jd + 1 / 24);
+		expect(Math.abs(b.lambda - a.lambda)).toBeGreaterThan(0.01); // sanity: the Sun moves ~0.04°/h
+		expect(sunModel(jd)).toBe('meeus');
+	});
+});

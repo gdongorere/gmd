@@ -39,7 +39,8 @@ export function GlobeCanvas({ ariaLabel, subsolar, sampler, overlay, version = 0
       if (document.hidden) return;
       const jd = simClock().jd();
       const p = props.current;
-      if (!dirty.current && jd === last.current.jd && p.version === last.current.version) return;
+      // Redraw only when time moved by 30+ simulated seconds (≈ 0.1 px of rotation at this size) or something else changed.
+      if (!dirty.current && Math.abs(jd - last.current.jd) * 86400 < 30 && p.version === last.current.version) return;
       dirty.current = false;
       last.current = { jd, version: p.version };
       const proj = makeProjector(p.subsolar(jd), view.current.az, view.current.el);

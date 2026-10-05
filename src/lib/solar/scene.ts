@@ -60,7 +60,7 @@ export class SolarScene {
 	trueScale = false;
 	showOrbits = true;
 	/** Moving the focus between bodies is interpolated: `blendFrom` → `focus` over a flight. */
-	private flight: null | { from: BodyId; to: BodyId; fromD: number; toD: number; az0: number; az1: number; po0: number; po1: number; plan: ReturnType<typeof planFlight>; t0: number; resolve: () => void } = null;
+	private flight: null | { fromPos: V3 | null; from: BodyId; to: BodyId; fromD: number; toD: number; az0: number; az1: number; po0: number; po1: number; plan: ReturnType<typeof planFlight>; t0: number; resolve: () => void } = null;
 	private flightPaused = false;
 	private flightElapsed = 0;
 	private lastTick = 0;
@@ -182,7 +182,7 @@ export class SolarScene {
 	private focusPosition(): V3 {
 		const f = this.flight;
 		if (!f) return this.bodyPosition(this.focus);
-		const a = this.bodyPosition(f.from), b = this.bodyPosition(f.to);
+		const a = f.fromPos ?? this.bodyPosition(f.from), b = this.bodyPosition(f.to);
 		const s = smooth(this.flightElapsed / (f.plan.duration * 1000));
 		return [a[0] + (b[0] - a[0]) * s, a[1] + (b[1] - a[1]) * s, a[2] + (b[2] - a[2]) * s];
 	}
@@ -190,17 +190,20 @@ export class SolarScene {
 	/** Smoothly fly to a body at a camera distance. Resolves when done (or immediately when `instant`). */
 	flyTo(body: BodyId, distanceAu: number, instant = false): Promise<void> {
 		const d1 = Math.min(MAX_DISTANCE_AU, Math.max(this.minDistance(body), distanceAu));
+		// Redirecting mid-flight starts from where the camera actually is, not from the old focus body.
+		const fromPos = this.flight ? this.focusPosition() : null;
 		this.flight?.resolve();
 		this.flight = null;
+		this.flightPaused = false;
 		const lit = this.litView(body);
 		if (instant) { this.focus = body; this.distanceAu = d1; if (lit) { this.azimuth = lit.az; this.polar = lit.polar; } return Promise.resolve(); }
-		const from = this.focus, a = this.bodyPosition(from), b = this.bodyPosition(body);
+		const from = this.focus, a = fromPos ?? this.bodyPosition(from), b = this.bodyPosition(body);
 		const travel = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 		const plan = planFlight(this.distanceAu, d1, travel);
 		return new Promise<void>((resolve) => {
 			this.flightElapsed = 0;
 			const az1 = lit ? this.azimuth + wrapPi(lit.az - this.azimuth) : this.azimuth;
-			this.flight = { from, to: body, fromD: this.distanceAu, toD: d1, az0: this.azimuth, az1, po0: this.polar, po1: lit ? lit.polar : this.polar, plan, t0: performance.now(), resolve };
+			this.flight = { fromPos, from, to: body, fromD: this.distanceAu, toD: d1, az0: this.azimuth, az1, po0: this.polar, po1: lit ? lit.polar : this.polar, plan, t0: performance.now(), resolve };
 		});
 	}
 
@@ -225,11 +228,12 @@ export class SolarScene {
 		this.focus = this.flight.to;
 		this.flight.resolve();
 		this.flight = null;
+		this.flightPaused = false;
 	}
 	finishFlight() {
 		if (!this.flight) return;
 		this.focus = this.flight.to; this.distanceAu = this.flight.toD;
-		this.flight.resolve(); this.flight = null;
+		this.flight.resolve(); this.flight = null; this.flightPaused = false;
 	}
 
 	minDistance(body: BodyId): number {
@@ -252,13 +256,13 @@ export class SolarScene {
 		this.camera.updateProjectionMatrix();
 	}
 
-	/** Advances the scene to `jd` and draws one frame; returns screen positions for labels. */
-	render(jd: number): ScreenLabel[] {
+	/** Advances the scene to `jd` and draws one frame; returns screen positions for labels, or null when the date is outside JS Date's range (nothing is drawn). */
+	render(jd: number): ScreenLabel[] | null {
 		const now = performance.now();
 		const dt = this.lastTick ? now - this.lastTick : 0;
 		this.lastTick = now;
 		this.jd = jd;
-		if (!this.computePositions(jd)) return [];
+		if (!this.computePositions(jd)) return null;
 		this.ensureOrbits(jd);
 		const f = this.flight;
 		if (f) {
@@ -288,7 +292,7 @@ export class SolarScene {
 		}
 		this.earthGroup.rotation.set(earthSpin.tiltRad, 0, 0);
 		this.earthSpin.rotation.set(0, earthSpin.gmstRad, 0);
-		this.orientMars(jd, rel('Mars'));
+		this.orientMars(jd, this.bodyPosition('Mars'));
 		const sunRel = rel('Sun');
 		this.sunLight.position.set(sunRel[0], sunRel[1], sunRel[2]);
 		this.glow.position.set(sunRel[0], sunRel[1], sunRel[2]);
@@ -320,10 +324,10 @@ export class SolarScene {
 		return [this.distanceAu * sp * Math.cos(this.azimuth), this.distanceAu * cp, -this.distanceAu * sp * Math.sin(this.azimuth)];
 	}
 
-	/** Mars's visible face toward the Sun follows its sub-solar point; the spin axis is approximated (documented in the UI). */
-	private orientMars(jd: number, rel: V3) {
+	/** Mars's visible face toward the Sun follows its sub-solar point; `helio` is Mars's heliocentric position. The spin axis is approximated (documented in the UI). */
+	private orientMars(jd: number, helio: V3) {
 		const { subsolar } = marsOrientation(jd);
-		const toSun = new THREE.Vector3(-rel[0], -rel[1], -rel[2]).normalize();
+		const toSun = new THREE.Vector3(-helio[0], -helio[1], -helio[2]).normalize();
 		const la = (subsolar.lat * Math.PI) / 180, lo = (subsolar.lon * Math.PI) / 180;
 		const local = new THREE.Vector3(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo));
 		const q = new THREE.Quaternion().setFromUnitVectors(local, toSun);

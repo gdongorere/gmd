@@ -7,7 +7,7 @@
 import * as Astronomy from 'astronomy-engine';
 import { J2000, decimalYearFromJd } from './julian';
 import { unixMsOrNaN } from './clock';
-import { gmstDegrees } from './time';
+import { gmstDegrees, jdTtFromUt } from './time';
 
 const D2R = Math.PI / 180;
 const norm360 = (x: number) => ((x % 360) + 360) % 360;
@@ -49,7 +49,7 @@ function engineSun(jd: number): SunEquatorial | null {
  * series (`jd` is TT≈UT there: ΔT ≤ 70 s is below that model's error).
  */
 export function sunPosition(jd: number): SunEquatorial {
-	return engineSun(jd) ?? meeusSun(jd);
+	return engineSun(jd) ?? meeusSun(jdTtFromUt(jd));
 }
 
 /** Which model {@link sunPosition} used at this instant. */

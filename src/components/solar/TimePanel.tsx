@@ -27,8 +27,8 @@ const PRESETS: Preset[] = [
   { label: 'Last Glacial Maximum', detail: '≈ 21,000 years ago: ice to ~40°N, seas 130 m lower', jd: () => jdFromCalendar(-19050, 1, 15, 12) },
   { label: 'Eemian interglacial', detail: '≈ 125,000 years ago: warmer than today, seas ~7 m higher', jd: () => jdFromCalendar(-123050, 6, 21, 12) },
   { label: 'Penultimate glaciation', detail: '≈ 150,000 years ago', jd: () => jdFromCalendar(-148050, 1, 15, 12) },
-  { label: 'Dinosaurs end', detail: '66 million years ago (galaxy only)', jd: () => jdFromCalendar(2026, 10, 5, 12) - 66e6 * DAY },
-  { label: 'One galactic year ago', detail: '≈ 203 million years ago (galaxy only)', jd: () => jdFromCalendar(2026, 10, 5, 12) - 203e6 * DAY },
+  { label: 'Dinosaurs end', detail: '66 million years ago (galaxy only)', jd: () => jdFromUnixMs(Date.now()) - 66e6 * DAY },
+  { label: 'One galactic year ago', detail: '≈ 203 million years ago (galaxy only)', jd: () => jdFromUnixMs(Date.now()) - 203e6 * DAY },
 ];
 
 function useFullscreen() {

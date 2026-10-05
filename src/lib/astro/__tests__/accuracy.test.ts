@@ -50,9 +50,9 @@ describe('eclipses, seasons and apsides', () => {
 		const e = yearEvents(2026)!;
 		expect(new Date(e.juneSolstice).toISOString().slice(0, 13)).toBe('2026-06-21T08');
 		expect(new Date(e.decSolstice).toISOString().slice(0, 10)).toBe('2026-12-21');
-		expect(new Date(e.perihelion).toISOString().slice(0, 10)).toBe('2026-01-03');
-		expect(e.perihelionAu).toBeCloseTo(0.9833, 3);
-		expect(e.aphelionAu).toBeCloseTo(1.0167, 3);
+		expect(new Date(e.perihelion!).toISOString().slice(0, 10)).toBe('2026-01-03');
+		expect(e.perihelionAu!).toBeCloseTo(0.9833, 3);
+		expect(e.aphelionAu!).toBeCloseTo(1.0167, 3);
 	});
 	it('rejects years outside the engine range', () => {
 		expect(yearEvents(1500)).toBeNull();
@@ -61,5 +61,18 @@ describe('eclipses, seasons and apsides', () => {
 	it('Kepler periods', () => {
 		expect(orbitalPeriodYears(1.524)).toBeCloseTo(1.88, 2);
 		expect(orbitalPeriodYears(5.203)).toBeCloseTo(11.87, 1);
+	});
+});
+
+describe('yearEvents edge years', () => {
+	it('never returns another year\'s apsis; 1802 has no perihelion of its own', () => {
+		const e = yearEvents(1802)!;
+		expect(e.perihelion).toBeNull();
+		expect(new Date(e.aphelion!).getUTCFullYear()).toBe(1802);
+		for (const y of [1801, 1803, 1999, 2026]) {
+			const v = yearEvents(y)!;
+			if (v.perihelion !== null) expect(new Date(v.perihelion).getUTCFullYear()).toBe(y);
+			if (v.aphelion !== null) expect(new Date(v.aphelion).getUTCFullYear()).toBe(y);
+		}
 	});
 });

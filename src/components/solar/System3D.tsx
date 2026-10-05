@@ -39,6 +39,7 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
   const [caption, setCaption] = useState('');
   const [descent, setDescent] = useState<{ index: number; paused: boolean } | null>(null);
   const [ready, setReady] = useState(false);
+  const [outOfRange, setOutOfRange] = useState(false);
   const descentRef = useRef<{ cancelled: boolean } | null>(null);
   const activity = useRef(0);
   const poke = () => { activity.current = performance.now(); };
@@ -96,9 +97,19 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
       }
       vslow = dt > 250 && scene.renderer.getPixelRatio() <= RATIOS[RATIOS.length - 1] + 0.01 ? vslow + 1 : Math.max(0, vslow - 2);
       if (vslow > 20 && !fallbackCalled) { fallbackCalled = true; onFallback?.(); }
-      const list = scene.render(simClock().jd());
-      if (!readyFlag && list.length) { readyFlag = true; setReady(true); }
-      for (const l of list) paintLabel(labelEls.current[l.id], l, opts.current.labels);
+      const frame = scene.render(simClock().jd());
+      setOutOfRange((o) => (o === (frame === null) ? o : frame === null));
+      const list = frame ?? [];
+      if (!readyFlag && frame && list.length) { readyFlag = true; setReady(true); }
+      // Label overlap culling: the focused body first, then nearest to the camera; a label that would sit on a placed one is hidden.
+      const placed: { x: number; y: number; w: number }[] = [];
+      const order = [...list].sort((a, b) => (a.id === scene.displayFocus ? -1 : b.id === scene.displayFocus ? 1 : a.distanceAu - b.distanceAu));
+      for (const l of order) {
+        const w = l.id.length * 7 + 22;
+        const hit = l.visible && placed.some((q) => Math.abs(q.x - l.x) < (q.w + w) / 2 && Math.abs(q.y - l.y) < 24);
+        if (l.visible && !hit) placed.push({ x: l.x + w / 2, y: l.y, w });
+        paintLabel(labelEls.current[l.id], hit ? { ...l, visible: false } : l, opts.current.labels);
+      }
       if (++frames % 6 === 0) { setFocus((f) => (f === scene.displayFocus ? f : scene.displayFocus)); setDistance(scene.focusDistanceAu); }
     };
     raf = requestAnimationFrame(loop);
@@ -192,7 +203,12 @@ export function System3D({ autoDescend = false, onFallback }: System3DProps) {
             aria-label={`Fly to ${id}`} onClick={() => { stopDescent(); void goTo(id, id === 'Sun' ? 0.05 : id === 'Moon' ? 0.0004 : defaultDistance(id)); }}
           >{id}</Box>
         ))}
-        {!ready && <Flex position="absolute" inset={0} align="center" justify="center"><Text color="content.muted">Loading the Solar System…</Text></Flex>}
+        {outOfRange && (
+          <Flex position="absolute" inset={0} align="center" justify="center" bg="rgba(2,3,10,0.85)" px={6} textAlign="center" data-testid="system3d-out-of-range">
+            <Text color="content.secondary">The planets can be placed for about ±270,000 years around today. At this date only the galaxy and the date itself are meaningful; use the clock to come back.</Text>
+          </Flex>
+        )}
+        {!ready && !outOfRange && <Flex position="absolute" inset={0} align="center" justify="center"><Text color="content.muted">Loading the Solar System…</Text></Flex>}
         {caption && (
           <Box position="absolute" left={0} right={0} bottom={0} px={4} py={3} bgGradient="linear(to-t, rgba(2,3,10,0.9), rgba(2,3,10,0))" pointerEvents="none">
             <Text fontSize={{ base: 'sm', md: 'md' }} data-testid="descent-caption">{caption}</Text>

@@ -113,23 +113,26 @@ export function eclipseNear(jd: number, windowHours = 36): EclipseFlag | null {
 export interface YearEvents {
 	/** Unix ms of each event (UTC). */
 	marchEquinox: number; juneSolstice: number; septEquinox: number; decSolstice: number;
-	perihelion: number; aphelion: number; perihelionAu: number; aphelionAu: number;
+	/** Null in the rare calendar year (e.g. 1802) with no perihelion or no aphelion: it fell on Dec 31 of a neighbouring year. */
+	perihelion: number | null; aphelion: number | null; perihelionAu: number | null; aphelionAu: number | null;
 }
 
 /** Equinoxes, solstices and Earth's apsides for a calendar year (1800–2200 only), or null outside it. */
 export function yearEvents(year: number): YearEvents | null {
 	if (!Number.isFinite(year) || year < 1800 || year > 2200) return null;
 	const s = Astronomy.Seasons(year);
-	const ap = (kind: number) => {
-		let a = Astronomy.SearchPlanetApsis(Astronomy.Body.Earth, new Date(Date.UTC(year, 0, 1)));
-		for (let i = 0; i < 4 && (a.kind !== kind || a.time.date.getUTCFullYear() !== year); i++) a = Astronomy.NextPlanetApsis(Astronomy.Body.Earth, a);
-		return a;
-	};
-	const p = ap(Astronomy.ApsisKind.Pericenter), a = ap(Astronomy.ApsisKind.Apocenter);
+	// Start in the previous December: some perihelia (1802–1819) fall on Dec 30–31 of the year before.
+	const inYear: Astronomy.Apsis[] = [];
+	let cur = Astronomy.SearchPlanetApsis(Astronomy.Body.Earth, new Date(Date.UTC(year - 1, 11, 1)));
+	for (let i = 0; i < 6; i++) {
+		if (cur.time.date.getUTCFullYear() === year) inYear.push(cur);
+		cur = Astronomy.NextPlanetApsis(Astronomy.Body.Earth, cur);
+	}
+	const p = inYear.find((x) => x.kind === Astronomy.ApsisKind.Pericenter), a = inYear.find((x) => x.kind === Astronomy.ApsisKind.Apocenter);
 	return {
 		marchEquinox: s.mar_equinox.date.getTime(), juneSolstice: s.jun_solstice.date.getTime(),
 		septEquinox: s.sep_equinox.date.getTime(), decSolstice: s.dec_solstice.date.getTime(),
-		perihelion: p.time.date.getTime(), aphelion: a.time.date.getTime(), perihelionAu: p.dist_au, aphelionAu: a.dist_au,
+		perihelion: p?.time.date.getTime() ?? null, aphelion: a?.time.date.getTime() ?? null, perihelionAu: p?.dist_au ?? null, aphelionAu: a?.dist_au ?? null,
 	};
 }
 

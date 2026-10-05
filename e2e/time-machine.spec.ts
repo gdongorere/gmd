@@ -170,4 +170,27 @@ test.describe('Time machine', () => {
     await expect(tour).toBeHidden();
     await expect(page.getByText(/· live/)).toBeVisible();
   });
+
+  test('after interrupting the descent, Exit descent leaves the camera free to fly again', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('h');
+    const controls = page.getByTestId('descent-controls');
+    await expect(controls).toBeVisible({ timeout: 60_000 });
+    const box = (await page.getByTestId('system3d').boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 40, box.y + 60);
+    await page.mouse.up();
+    await expect(controls.getByRole('button', { name: 'Resume descent' })).toBeVisible();
+    await controls.getByRole('button', { name: 'Exit descent' }).click();
+    await page.getByRole('group', { name: 'Scale ladder' }).getByRole('button', { name: 'Inner planets', exact: true }).click();
+    await expect(page.getByTestId('system3d-readout')).toContainText(/3\.60 AU/, { timeout: 30_000 });
+  });
+
+  test('a date beyond the planets’ range says so instead of freezing the 3D view', async ({ page }) => {
+    await page.goto('/stars?t=-1800000000');
+    await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
+    await page.keyboard.press('o');
+    await expect(page.getByTestId('system3d-out-of-range')).toBeVisible({ timeout: 30_000 });
+  });
 });

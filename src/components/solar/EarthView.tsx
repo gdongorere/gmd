@@ -92,6 +92,8 @@ function landColour(a: number): [number, number, number] {
   return LAND_RGB;
 }
 
+/** Equation of time as ±Mm SSs, rounding whole seconds first so it never reads 60s. */
+const fmtEot = (m: number) => { const t = Math.round(Math.abs(m) * 60); return `${m >= 0 ? '+' : '−'}${Math.floor(t / 60)}m ${String(t % 60).padStart(2, '0')}s`; };
 const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
 const hours = (deg: number) => { const h = deg / 15; return `${Math.floor(h)}h ${String(Math.floor((h % 1) * 60)).padStart(2, '0')}m`; };
 
@@ -102,7 +104,9 @@ export function EarthView() {
   const climate = useMemo(() => climateAt(snap.jd), [snap.jd]);
   const moon = moonState(snap.jd);
   const c = calendarFromJd(snap.jd);
-  const eclipse = useMemo(() => eclipseNear(snap.jd), [snap.jd]);
+  const eclipseKey = Math.round(snap.jd * 96); // 15-minute buckets: the search is not free
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const eclipse = useMemo(() => eclipseNear(snap.jd), [eclipseKey]);
   const events = useMemo(() => yearEvents(c.year), [c.year]);
   const eot = equationOfTimeMinutes(snap.jd);
   const nut = nutation(snap.jd);
@@ -180,7 +184,7 @@ export function EarthView() {
           <Fact label="Sun’s distance" value={`${sunPosition(snap.jd).distanceAu.toFixed(4)} AU`} />
           {moon && <Fact label="Moon" value={`${moon.phaseName}, ${(moon.illumination * 100).toFixed(0)}% lit`} />}
           {moon && <Fact label="Moon distance" value={`${Math.round(moon.distanceKm).toLocaleString('en-US')} km`} />}
-          <Fact label="Equation of time" value={`${eot >= 0 ? '+' : '−'}${Math.floor(Math.abs(eot))}m ${String(Math.round((Math.abs(eot) % 1) * 60)).padStart(2, '0')}s`} />
+          <Fact label="Equation of time" value={fmtEot(eot)} />
           <Fact label="Nutation (Δψ, Δε)" value={`${(nut.dPsi * 3600).toFixed(1)}″, ${(nut.dEps * 3600).toFixed(1)}″`} />
           <Fact label="Sun height at Greenwich" value={`${solarElevation(snap.jd, 51.4769, 0).toFixed(1)}° (no refraction)`} />
         </SimpleGrid>
@@ -209,8 +213,8 @@ export function EarthView() {
               <Text>June solstice</Text><Text>{stamp(events.juneSolstice)}</Text>
               <Text>September equinox</Text><Text>{stamp(events.septEquinox)}</Text>
               <Text>December solstice</Text><Text>{stamp(events.decSolstice)}</Text>
-              <Text>Perihelion</Text><Text>{stamp(events.perihelion)} · {events.perihelionAu.toFixed(4)} AU</Text>
-              <Text>Aphelion</Text><Text>{stamp(events.aphelion)} · {events.aphelionAu.toFixed(4)} AU</Text>
+              <Text>Perihelion</Text><Text>{events.perihelion !== null && events.perihelionAu !== null ? `${stamp(events.perihelion)} · ${events.perihelionAu.toFixed(4)} AU` : 'falls in a neighbouring year'}</Text>
+              <Text>Aphelion</Text><Text>{events.aphelion !== null && events.aphelionAu !== null ? `${stamp(events.aphelion)} · ${events.aphelionAu.toFixed(4)} AU` : 'falls in a neighbouring year'}</Text>
             </SimpleGrid>
           </Box>
         )}
