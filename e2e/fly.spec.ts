@@ -63,9 +63,10 @@ test.describe('/fly arena: first and third person', () => {
     await expect(page.getByTestId('arena-canvas').locator('canvas')).toBeVisible({ timeout: 60_000 });
     await page.waitForTimeout(1500);
     await expect(page.getByTestId('hud-alt')).toHaveText('0.0');
-    await key(page, ' ', 4000);
-    const alt = Number(await page.getByTestId('hud-alt').innerText());
-    expect(alt).toBeGreaterThan(1);
+    // Software rendering runs few frames per second and the sim clamps long frames, so hold the key until the climb shows up.
+    await page.keyboard.down(' ');
+    await expect.poll(async () => Number(await page.getByTestId('hud-alt').innerText()), { timeout: 40_000, intervals: [500] }).toBeGreaterThan(1);
+    await page.keyboard.up(' ');
     await page.keyboard.press('r');
     await expect(page.getByTestId('hud-alt')).toHaveText('0.0', { timeout: 10_000 });
   });
