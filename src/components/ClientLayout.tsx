@@ -9,7 +9,7 @@ import { Footer, FooterProject } from '@/components/Footer';
 import GalaxyControls from '@/components/galaxy/GalaxyControls';
 
 /** Immersive routes that supply their own chrome. */
-const BARE_ROUTES = ['/stars', '/house-viewer'];
+const BARE_ROUTES = ['/stars', '/house-viewer', '/fly'];
 
 export default function ClientLayout({
   children,

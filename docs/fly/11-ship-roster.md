@@ -102,8 +102,11 @@ The same equations govern both ships. The background vessel obeys the same gravi
 
 ## 4. Procedural construction rules per hull (summary; full rules in `06-ship-spec.md` for the Wayfarer)
 
-### Kestrel (small)
-- **Canopy bubble:** a ~2 m glass sphere section (outer shell with slight tint + inner frame), reflections from the environment (screen-space or cube), thin frame ribs, a small pilot/passenger pair (silhouettes).
+### Kestrel (small) — BUILT (v1 model at `/fly`)
+
+> **Status:** implemented as a procedural three.js model (`src/lib/fly/ship/kestrel.ts`, 27 k triangles, 73 meshes, 9.7 × 8.1 × 4.0 m) with a hangar viewer at `/fly`. The built design follows Gee's reference images: **a glass spherical cockpit with a gyroscope-style ring frame, a white spherical engine pod with seam lines and a glowing lift ring, a long thin spine, a side-facing ring turbine at the tail that swings aft for cruise, thin swept wing blades, and four spindly jointed legs that fold up**. It is an *original* build inspired by that dragonfly-like design language, not a trace of any film craft. The notes below describe the earlier, duct-wing idea; the built model is the authoritative design.
+
+- **Canopy bubble:** a ~2.7 m glass sphere (transmissive in the viewer; cheap transparency on weak GPUs) with a ring frame, a pilot/passenger pair (silhouettes), seats and a console with glowing screens.
 - **Fuselage:** compact torpedo-like body with a swept mid-section, **two short wings** (movable ducts at the tips) and a **rear drive nozzle**; four **ducted thrust units** with visible fan blades and exhaust glow.
 - **Gear:** three telescoping legs with skid pads; tiny floodlights; rear ramp or side door (v2).
 - **Materials:** clean white/grey composite with matte panels, subtle wear, small stencilled markings (original), amber/cyan accent lights.
