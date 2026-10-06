@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { G0, KESTREL, type ShipSpec } from '../ships/specs';
 import { EARTH, WGS84, type Vec3, ecefToGeodetic, enuBasis, geodeticToEcef, gravityEcef, rad, deg } from '../earth/geo';
 import { airAt, dynamicPressure } from '../earth/atmosphere';
+import { type OrbitInfo, orbitOf } from '../earth/orbit';
 import { FOOT_OFFSET, MAX_RATE, RCS_FORCE, RETRO_FRACTION, axes } from './flight';
 
 export interface EarthState {
@@ -37,6 +38,8 @@ export interface EarthState {
 	flightMode: boolean;
 	/** Throttle lever 0…1 in flight mode (W/S move it, like an aircraft). */
 	throttle: number;
+	/** Horizon-hold: the pitch angle above the local horizon (rad) the nose is held at, or null when the pilot is steering. */
+	pitchHold: number | null;
 }
 
 export interface TerrainQuery {
@@ -70,7 +73,7 @@ export function spawnOnGround(latDeg: number, lonDeg: number, headingDeg: number
 	const p = geodeticToEcef(lat, lon, groundHeight + FOOT_OFFSET.down);
 	const s: EarthState = {
 		pos: new THREE.Vector3(...p), vel: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(),
-		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0, mainSigned: 0, flightMode: false, throttle: 0,
+		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0, mainSigned: 0, flightMode: false, throttle: 0, pitchHold: null,
 	};
 	setAttitude(s.q, lat, lon, rad(headingDeg), 0);
 	return s;
@@ -207,7 +210,10 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 	const vx = s.vel.dot(fwd), vzB = s.vel.dot(right), vUp0 = s.vel.dot(n), sp = s.vel.length();
 	const rho0 = opts.rho ?? airAt(geo.h).density;
 	if (flight) s.throttle = Math.min(1, Math.max(0, s.throttle + inp.forward * dt * 0.45)); else s.throttle = 0;
-	const flightAssist = flight && (opts.hoverAssist ?? true) && vx > 25;
+	const qDyn = 0.5 * rho0 * vx * vx;
+	// The path-hold assist only works where there is air to fly on and the pilot is not pitching; steeper than ~25° (a climb to space) the nose just holds.
+	const gamma0 = Math.asin(Math.max(-1, Math.min(1, vUp0 / Math.max(1, sp))));
+	const flightAssist = flight && (opts.hoverAssist ?? true) && vx > 25 && qDyn > 1500 && inp.pitch === 0 && Math.abs(gamma0) < 0.6;
 
 	// attitude: first-order rate response, optional levelling toward the true local vertical
 	let cmdRoll = inp.roll * MAX_RATE.roll, cmdPitch = inp.pitch * MAX_RATE.pitch;
@@ -221,10 +227,21 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 		const q = Math.max(1, 0.5 * rho0 * vx * vx);
 		const gamma = Math.asin(Math.max(-1, Math.min(1, vUp0 / Math.max(1, sp))));
 		const alphaTrim = Math.min(0.28, Math.max(0, (m * gLocal * Math.cos(gamma)) / (q * AERO.S * AERO.slope)));
-		const gammaCmd = inp.pitch !== 0 ? inp.pitch * 0.3 : Math.max(-0.12, Math.min(0.12, -0.04 * vUp0));
+		// shallow flight returns to level and holds altitude; a deliberate steep climb or dive (> ~17°) holds its flight-path angle
+		const gammaCmd = Math.abs(gamma) < 0.3 ? Math.max(-0.12, Math.min(0.12, -0.04 * vUp0)) : gamma;
 		const theta = Math.asin(Math.max(-1, Math.min(1, fwd.dot(n))));
 		cmdPitch = Math.max(-MAX_RATE.pitch, Math.min(MAX_RATE.pitch, 2.5 * (gamma + alphaTrim + 1.5 * (gammaCmd - gamma) - theta)));
 	}
+	if (flight && !flightAssist && (opts.levelAssist ?? true)) {
+		// Horizon hold: out of the air (or in a steep climb) the nose keeps the pitch angle it had when the pilot let go, measured from the LOCAL horizon.
+		// Without it the nose, fixed in space, drifts up as the Earth curves away beneath a fast ship and an orbit insertion burn climbs instead of circularising.
+		const theta = Math.asin(Math.max(-1, Math.min(1, fwd.dot(n))));
+		if (inp.pitch !== 0) s.pitchHold = null;
+		else {
+			if (s.pitchHold === null) s.pitchHold = theta;
+			cmdPitch = Math.max(-MAX_RATE.pitch, Math.min(MAX_RATE.pitch, 2 * (s.pitchHold - theta)));
+		}
+	} else s.pitchHold = null;
 	if (flight && sp > 20) cmdYaw += -Math.max(-0.6, Math.min(0.6, 2 * Math.atan2(vzB, Math.max(1, vx)))); // the tail fin weathervanes the nose into the airflow
 	const k = 1 - Math.exp(-dt / 0.25);
 	s.w.x += (cmdRoll - s.w.x) * k; s.w.y += (cmdYaw - s.w.y) * k; s.w.z += (cmdPitch - s.w.z) * k;
@@ -335,6 +352,7 @@ export interface EarthTelemetry {
 	mach: number; q: number; gForce: number; heatFlux: number; fuelFraction: number; mass: number; hover: number; main: number;
 	air: { temperature: number; pressure: number; density: number };
 	inSpace: boolean;
+	orbit: OrbitInfo;
 }
 
 export function earthTelemetry(s: EarthState, terrain: TerrainQuery, spec: ShipSpec = KESTREL): EarthTelemetry {
@@ -358,5 +376,6 @@ export function earthTelemetry(s: EarthState, terrain: TerrainQuery, spec: ShipS
 		hover: s.hover / spec.thrust.hover, main: s.main / spec.thrust.main,
 		air: { temperature: a.temperature, pressure: a.pressure, density: a.density },
 		inSpace: g.h > EARTH.karman,
+		orbit: orbitOf([s.pos.x, s.pos.y, s.pos.z], [s.vel.x, s.vel.y, s.vel.z]),
 	};
 }

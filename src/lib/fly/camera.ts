@@ -24,10 +24,16 @@ const smoothstep = (t: number) => { const x = Math.min(1, Math.max(0, t)); retur
 /** Heading-only rotation (yaw about world up) of a ship orientation, so the chase camera ignores roll and pitch. */
 export function yawOnly(q: THREE.Quaternion): THREE.Quaternion {
 	const f = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
-	f.y = 0;
-	if (f.lengthSq() < 1e-6) return new THREE.Quaternion();
-	f.normalize();
-	return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), f);
+	const h = new THREE.Vector3(f.x, 0, f.z);
+	if (h.lengthSq() < 0.25) {
+		// The nose is within ~30° of vertical (a climb to space): the heading is read from the belly instead, which points aft when the nose is up.
+		const u = new THREE.Vector3(0, 1, 0).applyQuaternion(q);
+		h.set(u.x, 0, u.z);
+		if (f.y > 0) h.negate();
+	}
+	if (h.lengthSq() < 1e-6) return new THREE.Quaternion();
+	h.normalize();
+	return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), h);
 }
 
 /** First-person pose: the eye position in the world and an orientation matching the ship (camera looks along ship +X, up = ship +Y). */

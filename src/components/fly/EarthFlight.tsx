@@ -17,7 +17,7 @@ import { useTouchDevice } from './useLandscape';
 interface Hud {
   lat: number; lon: number; msl: number; agl: number; speed: number; vs: number; heading: number; mach: number; fuel: number; mass: number;
   pressure: number; temperature: number; q: number; heat: number; sunElev: number; utc: string; event: string;
-  terrainReady: number; underfoot: boolean; offline: boolean; imagery: number; tiles: number; buildings: number; estimated: number; buildingsLoading: boolean; buildingsFailed: boolean; space: boolean; flight: boolean; throttle: number;
+  terrainReady: number; underfoot: boolean; offline: boolean; imagery: number; tiles: number; buildings: number; estimated: number; buildingsLoading: boolean; buildingsFailed: boolean; space: boolean; flight: boolean; throttle: number; pitch: number; warp: number; warpMax: number; ap: number | null; pe: number; vOrb: number; vCirc: number; inOrbit: boolean;
 }
 const EVENT_TEXT = { landed: 'Landed.', rough: 'Rough landing: slow your descent and level out.', crash: 'Hard impact. Back at your last takeoff point.' } as const;
 
@@ -45,7 +45,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
   const touchInput = useRef<FlightInput>({ ...NO_INPUT });
   const isTouch = useTouchDevice();
   const padActive = useRef(false);
-  const actions = useRef<{ respawn: () => void; flightMode: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
+  const actions = useRef<{ respawn: () => void; flightMode: () => void; warp: (dir: number) => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
 
   usePadFrames(({ pad: p, pressed }) => {
     padActive.current = Math.abs(p.lx) + Math.abs(p.ly) + Math.abs(p.rx) + Math.abs(p.ry) + p.l2 + p.r2 > 0.05 || p.down.l1 || p.down.r1;
@@ -156,6 +156,8 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         actions.current = {
           respawn: () => teleport(spawnInfo.lat, spawnInfo.lon, spawnInfo.hdg, 0),
           flightMode: () => { state.flightMode = !state.flightMode; state.throttle = 0; },
+          // Up steps to the next speed allowed right now and wraps to ×1; down steps back one.
+          warp: (dir) => { const i = Math.max(0, WARPS.indexOf(warpNow)); if (dir > 0) { const nx = WARPS[Math.min(WARPS.length - 1, i + 1)]; warpTarget = nx <= warpMax && nx !== warpNow ? nx : 1; } else warpTarget = WARPS[Math.max(0, i - 1)]; },
           view: () => setView((v) => (v === 'first' ? 'third' : 'first')),
           teleport,
           timeShift: (h) => { timeOffsetMs = h === 'now' ? 0 : timeOffsetMs + h * 3600_000; },
@@ -173,6 +175,8 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           else if (k === 'r') actions.current?.respawn();
           else if (k === 'i') setHideUi((v) => !v);
           else if (k === 'c') actions.current?.flightMode();
+          else if (k === '.' || k === '>') actions.current?.warp(1);
+          else if (k === ',' || k === '<') actions.current?.warp(-1);
           else if (k === 'h') setHoverAssist((v) => !v);
           else if (k === '[') actions.current?.timeShift(e.shiftKey ? -6 : -1);
           else if (k === ']') actions.current?.timeShift(e.shiftKey ? 6 : 1);
@@ -190,6 +194,10 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         const v3 = new THREE.Vector3(), sunLocal = new THREE.Vector3(), upLocal = new THREE.Vector3(), shipLocal = new THREE.Vector3(), velLocal = new THREE.Vector3(), qLocal = new THREE.Quaternion();
         const mEcef3 = new THREE.Matrix3(), mInertial = new THREE.Matrix3(), rz = new THREE.Matrix3();
         let lit = light.lightingFor(10, 30), litAt = -1e9, sunE: [number, number, number] = [1, 0, 0], gast = 0, sunAt = -1e9;
+        const WARPS = [1, 2, 5, 10, 50];
+        let warpTarget = 1, warpNow = 1;
+        let warpMax = 1;
+        let lastTel: ReturnType<typeof sim.earthTelemetry> | null = null;
         let emaDt = 0.02, govAt = 0, gearPos = 1, gearDown = true;
         let lastView: ViewMode = 'third', eventText = '', eventUntil = 0, raf = 0, last = performance.now(), acc = 0, hudAt = 0;
         const rd = (n: number, d = 0) => Number(n.toFixed(d));
@@ -222,10 +230,18 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             frame.setAnchor([state.pos.x, state.pos.y, state.pos.z]); rig.snap();
             spawnInfo.pending = false;
           }
+          // Time warp is only allowed where nothing near can hurt the ship: out of the thick air (and never close to the ground).
+          {
+            const agl = lastTel?.altitudeAgl ?? 0, dens = lastTel?.air.density ?? 1.2, msl = lastTel?.altitudeMsl ?? 0;
+            const allowed = msl > 100_000 ? 50 : dens < 1e-3 && agl > 20_000 ? 10 : dens < 0.2 && agl > 5000 ? 2 : 1;
+            warpNow = Math.max(1, Math.min(warpTarget, allowed));
+            warpMax = allowed;
+            if (warpNow > 1) timeOffsetMs += dt * 1000 * (warpNow - 1); // the day and night pass at the same pace
+          }
           if (!spawnInfo.pending) {
             acc += dt;
             let n = 0;
-            while (acc >= 1 / 60 && n++ < 6) { sim.stepEarth(state, input, 1 / 60, manager.terrain, { hoverAssist: f.hoverAssist, levelAssist: f.levelAssist }); acc -= 1 / 60; }
+            while (acc >= 1 / 60 && n++ < 6) { sim.stepEarth(state, input, warpNow / 60, manager.terrain, { hoverAssist: f.hoverAssist, levelAssist: f.levelAssist }); acc -= 1 / 60; }
             if (acc > 0.2) acc = 0;
           }
           if (state.event) {
@@ -241,7 +257,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           }
 
           frame.toLocal(state.pos, shipLocal); frame.quatToLocal(state.q, qLocal); frame.dirToLocal(state.vel, velLocal);
-          const tel = sim.earthTelemetry(state, manager.terrain);
+          const tel = sim.earthTelemetry(state, manager.terrain); lastTel = tel;
           model.root.position.copy(shipLocal); model.root.quaternion.copy(qLocal);
           // Automatic landing gear: down below 15 m above the ground, up (and hidden) above 30 m.
           if (gearDown && tel.altitudeAgl > 30) gearDown = false; else if (!gearDown && tel.altitudeAgl < 15) gearDown = true;
@@ -307,6 +323,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               utc: now.toISOString().slice(0, 16).replace('T', ' ') + ' UTC', event: t < eventUntil ? eventText : '',
               terrainReady: manager.stats.ready, underfoot: manager.stats.underfootReady && !spawnInfo.pending, offline: manager.stats.offline, imagery: manager.stats.imagery, tiles: manager.stats.displayed,
               buildings: bs.buildings, estimated: bs.estimatedShare, buildingsLoading: bs.loading, buildingsFailed: bs.failed > 0 && bs.cells === 0, space: tel.inSpace, flight: tel.flightMode, throttle: tel.throttle,
+              pitch: tel.pitch, warp: warpNow, warpMax, ap: tel.orbit.apoapsis, pe: tel.orbit.periapsis, vOrb: tel.orbit.inertialSpeed, vCirc: tel.orbit.circularSpeed, inOrbit: tel.orbit.inOrbit,
             });
           }
         };
@@ -353,6 +370,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Button size="xs" variant={view === 'third' ? 'solid' : 'ghost'} aria-pressed={view === 'third'} onClick={() => setView('third')}>Third person</Button>
             </Flex>}
             <Button size="sm" variant={hud?.flight ? 'solid' : 'glass'} colorScheme={hud?.flight ? 'orange' : undefined} aria-pressed={!!hud?.flight} onClick={() => actions.current?.flightMode()} data-testid="mode-button">{hud?.flight ? 'Flight mode' : 'Hover mode'}{isTouch ? '' : ' (C)'}</Button>
+            {hud && (hud.warpMax > 1 || hud.warp > 1) && <Button size="sm" variant={hud.warp > 1 ? 'solid' : 'glass'} colorScheme={hud.warp > 1 ? 'purple' : undefined} onClick={() => actions.current?.warp(1)} aria-label={`Time warp, now ×${hud.warp}`} data-testid="warp-button">Warp ×{hud.warp}{isTouch ? '' : ' (. ,)'}</Button>}
             <Flex {...glass} px={2} py={1} gap={2} align="center">
               <Select size="xs" w="210px" value={placeId} onChange={(e) => goPlace(e.target.value)} aria-label="Start from a place" data-testid="earth-place">
                 {PLACES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -368,7 +386,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             <Text><b>Space / Shift</b> climb / descend (airbrake in flight) · <b>W S</b> thrust / retro (throttle lever in flight) · <b>A D</b> strafe</Text>
             <Text><b>Q E</b> yaw · <b>↑ ↓</b> pitch · <b>← →</b> roll</Text>
             <Text><b>C</b> hover ⇄ flight mode · <b>V</b> view · <b>H</b> assist · <b>R</b> back to takeoff · <b>I</b> hide</Text>
-            <Text><b>[ ]</b> time of day ∓1 h (<b>Shift</b> ∓6 h)</Text>
+            <Text><b>. ,</b> time warp (out of the thick air) · <b>[ ]</b> time of day ∓1 h (<b>Shift</b> ∓6 h)</Text>
             <Text mt={1}>Controller: sticks fly, R2/L2 climb/descend, {buttonName('triangle', 'playstation')} view, {buttonName('cross', 'playstation')} flight mode, {buttonName('circle', 'playstation')} back.</Text>
             <Flex gap={3} mt={2} wrap="wrap">
               <Checkbox size="sm" isChecked={hoverAssist} onChange={(e) => setHoverAssist(e.target.checked)}>Hover assist</Checkbox>
@@ -388,6 +406,14 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           </Flex>
 
           <Flex position="absolute" left={3} right={3} bottom={isTouch ? 'auto' : 3} top={isTouch ? '54px' : 'auto'} direction="column" align="center" gap={2} pointerEvents="none" fontSize={isTouch ? 'xs' : undefined}>
+            {hud && hud.msl > 20_000 && (
+              <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="sm" data-testid="earth-orbit">
+                <Text>V <b>{fmt(hud.vOrb / 1000, 2)}</b> km/s <Text as="span" color="content.muted">(orbital {fmt(hud.vCirc / 1000, 2)})</Text></Text>
+                <Text>AP <b>{hud.ap === null ? 'escape' : fmt(hud.ap / 1000)}</b>{hud.ap === null ? '' : ' km'}</Text>
+                <Text>PE <b>{fmt(hud.pe / 1000)}</b> km</Text>
+                {hud.inOrbit && <Text color="green.300" fontWeight={700} data-testid="in-orbit">IN ORBIT</Text>}
+              </Flex>
+            )}
             {hud?.event && <Text {...glass} px={3} py={1} fontSize="sm" data-testid="earth-event">{hud.event}</Text>}
             {hud && hud.heat > 25 && <Text {...glass} px={3} py={1} fontSize="sm" color="orange.200">Re-entry heating {fmt(hud.heat)} W/cm² (damage is not modelled yet)</Text>}
             <Flex {...glass} px={4} py={2} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="sm" data-testid="earth-hud">
@@ -400,6 +426,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Text>V/S <b>{fmt(hud?.vs ?? 0, 1)}</b></Text>
               <Text>HDG <b>{fmt(hud?.heading ?? 0)}</b>°</Text>
               {hud?.flight && <Text>THR <b data-testid="hud-throttle">{fmt(hud.throttle * 100)}</b>%</Text>}
+              {hud && (hud.msl > 15_000 || hud.flight) && <Text>PITCH <b data-testid="hud-pitch">{fmt(hud.pitch)}</b>°</Text>}
               <Text>FUEL <b>{fmt((hud?.fuel ?? 1) * 100)}</b>%</Text>
             </Flex>
             {!isTouch && <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="xs" color="content.muted" data-testid="earth-air">
