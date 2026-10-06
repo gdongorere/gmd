@@ -164,9 +164,12 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const cockpit = new THREE.Group(); cockpit.name = 'cockpit'; cockpit.position.set(3.4, 0.45, 0); root.add(cockpit);
 	const R = 1.35;
 	addMesh(cockpit, new THREE.SphereGeometry(R, seg, Math.round(seg * 0.6)), glass, 'canopy');
-	// Clean glass: no metal bands across the bubble. One thick white oval frame rims the front opening, as in the reference.
+	// Clean glass: no metal bands across the bubble. A thick white oval frame rims each SIDE of the canopy (like door frames), as in the reference.
 	const frame = new THREE.Group(); frame.name = 'frame'; cockpit.add(frame);
-	const rim = addMesh(frame, new THREE.TorusGeometry(R * 0.74, 0.09, 14, seg * 2), ceramic, 'frame-ring'); rim.position.x = R * 0.58; rim.rotation.y = Math.PI / 2; rim.scale.set(1, 1.06, 1); // faces forward
+	for (const side of [1, -1]) {
+		const rim = addMesh(frame, new THREE.TorusGeometry(R * 0.81, 0.07, 14, seg * 2), ceramic, 'frame-ring');
+		rim.position.z = side * R * 0.58; rim.scale.set(0.92, 1.04, 1); // axis along the span, so the oval faces left and right
+	}
 	// cradle: dark structure joining the sphere to the spine
 	addMesh(cockpit, new THREE.CylinderGeometry(0.5, 0.7, 0.55, 20), graphite, 'cradle').position.set(-0.55, -0.95, 0);
 	const strut = addMesh(cockpit, new THREE.BoxGeometry(1.6, 0.22, 0.36), graphite, 'cradle-beam'); strut.position.set(-1.1, -0.55, 0);
