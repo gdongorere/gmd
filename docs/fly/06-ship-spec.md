@@ -1,5 +1,7 @@
 # `/fly` — ship specification: *Wayfarer*
 
+> **Amended:** the Wayfarer is now one of three hulls (see `docs/fly/11-ship-roster.md`: Kestrel small, Wayfarer heavy, Meridian big expedition ship). The propulsion table below originally used 900 s of specific impulse, which gives only ≈ 4.5 km/s of Δv and cannot reach orbit; it is corrected here to the roster's fictional torch values (3,000 s main/rings/hover, 300 s RCS → Δv ≈ 15 km/s). All values are gameplay values (G).
+
 Companion to `docs/plan-fly.md` §7. The **design brief** for the original heavy hover-freighter, with dimensions, mass model, thrusters, gear,
 procedural construction rules, materials, lighting, damage states and budgets. Values marked **G** are *gameplay values* (chosen, not real).
 
@@ -25,11 +27,11 @@ procedural construction rules, materials, lighting, damage states and budgets. V
 
 | System | Count | Thrust (vacuum) | Isp | Notes |
 |---|---|---|---|---|
-| Main drive (central nozzle) | 1 | 6 MN **G** | 900 s **G** | spool 1.5 s; plume shape depends on ambient pressure |
-| Ring nacelles (vectoring) | 3 | 2 MN each **G** | 700 s **G** | gimbal ±8°, provide pitch/yaw authority at speed |
-| Hover jets (wing pods + belly) | 8 | 0.8 MN each **G** | 400 s **G** | active below 150 m/s and near ground; ground-effect cushion |
-| RCS blocks | 16 | 20 kN each **G** | 280 s **G** | translation + rotation, 4 blocks × 4 nozzles |
-| Retro engines (bow) | 2 | 1.5 MN each **G** | 600 s **G** | braking and suicide-burn assist |
+| Main drive (central nozzle) | 1 | 6 MN **G** | 3,000 s **G** | spool 1.5 s; plume shape depends on ambient pressure |
+| Ring nacelles (vectoring) | 3 | 2 MN each **G** | 3,000 s **G** | gimbal ±8°, provide pitch/yaw authority at speed |
+| Hover jets (wing pods + belly) | 8 | 0.8 MN each **G** | 3,000 s **G** | active below 150 m/s and near ground; ground-effect cushion |
+| RCS blocks | 16 | 20 kN each **G** | 300 s **G** | translation + rotation, 4 blocks × 4 nozzles |
+| Retro engines (bow) | 2 | 1.5 MN each **G** | 3,000 s **G** | braking and suicide-burn assist |
 
 Thrust-to-weight (full tank 1,000 t): main + rings ≈ 12 MN on 10⁷ N weight at Earth → ~1.2 g; at Mars ~ 3.2 g; at the Moon ~7.4 g. With a hover-capable ratio at Earth requiring main + hover jets together (≈ 18.4 MN) — adjustable, test-driven.
 

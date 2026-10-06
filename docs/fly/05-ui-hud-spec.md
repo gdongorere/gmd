@@ -51,6 +51,10 @@ controls are small, sit at the edges, fade when idle and never cover the view.**
 - Landscape: sticks at the lower corners, flight strip centred; the page clock stays off by default (toggle).
 - **Centring rule (learned in `/stars`):** the scene's look-at point is shifted so it sits centred in the space between the top controls and the bottom cluster (measured from real element bounds, not fixed offsets).
 
+## 3b. Per-ship HUD variants and hangar
+
+The HUD has three variants over the same data (see `11-ship-roster.md` §6): **canopy** (Kestrel: thin projected arcs, minimal chrome), **windscreen** (Wayfarer: framed panels), **bridge** (Meridian: wide consoles and a tactical strip). A **hangar / ship-select** screen precedes flight and is reachable from the pause menu; **Launch / Dock / Switch vessel** and docking guidance are part of the Ship menu.
+
 ## 4. HUD elements, states and copy
 
 | Element | Shows | States | Copy |

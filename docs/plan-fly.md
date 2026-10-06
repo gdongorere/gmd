@@ -20,6 +20,8 @@ tagged **⚠** and must be entered into code with `verified: false` until checke
 | `docs/fly/06-ship-spec.md` | the Wayfarer: dimensions, thrusters, gear, limits, procedural construction rules, budgets |
 | `docs/fly/07-test-matrix.md` | unit/e2e/visual/manual test matrix and quality gates |
 | `docs/fly/08-glossary-sources-verification.md` | glossary, where to verify each number, the verification log template, known gaps |
+| `docs/fly/10-controller-support.md` | DualShock 4 / any-gamepad support on every device: approach, support matrix, `/stars` and `/fly` control maps, what is verified and what is not |
+| `docs/fly/11-ship-roster.md` | **ship roster**: Kestrel (small), Wayfarer (heavy), Meridian (big expedition ship), hangar select, mothership launch/dock/switch, per-ship flight data, tickets, tests |
 | `docs/fly/09-physicality-charter.md` | **binding realism rules**: every effect has a physical driver; ship, fluid, light, sound, terrain and feedback physics; realism tickets, declared departures and acceptance tests |
 
 ---
@@ -42,7 +44,7 @@ game-like, full-screen, HUD-overlaid view with a clean "hide interface" mode (al
    `/stars` (`simClock`). Earth's night side is genuinely dark where it really is.
 3. **Each world feels like itself.** Atmosphere, gravity, heat, wind, light, sound and terrain are per-body data, not a
    generic skybox. The ship behaves differently in each (§8, §9).
-4. **A believable ship.** Big, heavy, loud when it should be, silent in vacuum. Weight and momentum, not a floaty arcade dot.
+4. **Believable ships, big or small.** Pick a nimble bubble-canopy craft or a heavy expedition ship (or fly both: the big one carries the small one). Weight and momentum, loud when it should be, silent in vacuum; one physics engine, different data.
 5. **Always recoverable, never frustrating.** Crushed on Venus or burned at the Sun? The ship is "recalled" to orbit with a
    plain explanation of what killed it. No gore, no dead ends.
 6. **Instant everywhere.** Something moves within a second; heavy assets stream behind the scene; a weaker device gets
@@ -292,7 +294,13 @@ Each layer is pure TypeScript with unit tests; only `render/*`, `audio/*`, `inpu
 
 ---
 
-## 7. The ship: *Wayfarer* (an original design in the spirit of a Matrix-era hovercraft)
+## 7. The ships (roster: Kestrel, Wayfarer, Meridian)
+
+> **Update (Gee):** the pilot must be able to fly **either a big ship (Mass Effect Andromeda-style expedition ship) or a small craft (Oblivion-style bubble-canopy VTOL)**. The single-ship design below is now one of three hulls; the roster, hangar, mothership mode (the big ship carries the small one), per-ship flight data and tickets are in **`docs/fly/11-ship-roster.md`**. Designs are original (language and role only). A correction found while doing this: the first Wayfarer drive numbers could not reach orbit, so propulsion values were raised to a fictional torch (Δv ≈ 15–19 km/s).
+
+### 7.0 The original single-ship design (now the Wayfarer)
+
+(an original design in the spirit of a Matrix-era hovercraft)
 
 The brief asks for a big spaceship "almost like the crafts in the Matrix, or a cool 3D asset you can find." Two important
 facts: **(a)** the sandbox cannot download assets, and **(b)** the Matrix craft are a third party's design, so `/fly` should ship

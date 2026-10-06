@@ -156,6 +156,10 @@ bundle budgets (`/fly` chunk isolated; `/stars` and `/` unchanged within 2 %), `
 
 ---
 
+## Ship-roster tickets
+
+The single-ship tickets above (F3.6, F4.*, F6.8, F9.*) are generalised to three hulls by the **S-series** tickets in `docs/fly/11-ship-roster.md` §7 (ShipSpec data, VesselManager, Kestrel and Meridian models, landing rules per ship, hangar select, launch/dock/switch, HUD variants). **Build order: Kestrel → Wayfarer → Meridian**; first playable milestone = *Kestrel: orbit → Moon landing*.
+
 ## Parallelisation notes
 
 - F4 (ship) and F5 (atmospheres) can run in parallel after F3 if two sessions work on separate files (`ship/*` vs `atmosphere|aero|thermal|sky/*`).

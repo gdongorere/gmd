@@ -74,6 +74,8 @@ ballistic coefficient **β = m / (C_D A) ≈ 375 kg/m²**. Terminal velocity `v_
 | Venus surface | ≈ 65 | 8.87 | **10 m/s** |
 | Titan surface | ≈ 5.3 | 1.35 | **14 m/s** |
 
+> **Note:** this β uses the Wayfarer's *dry* mass (600 t). With full propellant (1,000 t) β = 625 kg/m² and the terminal speeds are ×1.29 (Earth 100 m/s, Mars 482 m/s). Per-ship values for the whole roster are in `11-ship-roster.md` §1.1.
+
 **Design reading:** a falling Wayfarer is gently arrested by thick air (Venus, Titan: ~10–14 m/s, survivable without engines in principle) and
 barely arrested on Mars (373 m/s at the surface: the engines must do the work, exactly Mars's real "thin air but not nothing" problem).
 These are the *feel* anchors for aero tuning. **Tests:** `aero.ts` terminal velocity under a constant-ρ atmosphere equals the table within 1 %.
