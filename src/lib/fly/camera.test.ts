@@ -96,3 +96,26 @@ describe('head lean (acceleration-driven)', () => {
 		expect(settle(new CameraRig('first', { comfort: 0 }), 15)).toBeLessThan(1e-6);
 	});
 });
+
+describe('chase camera at speed', () => {
+	it('does not lag further behind a fast ship: the steady-state offset equals the rest offset', () => {
+		const rig = new CameraRig('third');
+		const q = new THREE.Quaternion(), vel = new THREE.Vector3(120, 0, 0), pos = new THREE.Vector3();
+		for (let i = 0; i < 600; i++) { pos.addScaledVector(vel, 1 / 60); rig.update(1 / 60, pos, q, vel); }
+		const rest = chaseTarget(pos, q).distanceTo(pos);
+		expect(rig.pose.pos.distanceTo(pos)).toBeLessThan(rest * 1.15 + 1);
+	});
+});
+
+describe('chase heading while climbing vertically', () => {
+	it('keeps a sensible heading when the nose points straight up (no flip to a fixed direction)', () => {
+		// heading east (+X) then pitched up 88°: the camera heading must still be east, for the rig to sit behind (west of) the ship
+		const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (88 * Math.PI) / 180);
+		const f = new THREE.Vector3(1, 0, 0).applyQuaternion(yawOnly(q));
+		expect(f.x).toBeGreaterThan(0.99);
+		// and pointing 88° up while heading north (−Z)
+		const qn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), (88 * Math.PI) / 180));
+		const fn = new THREE.Vector3(1, 0, 0).applyQuaternion(yawOnly(qn));
+		expect(fn.z).toBeLessThan(-0.99);
+	});
+});

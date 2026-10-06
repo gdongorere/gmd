@@ -140,23 +140,26 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const lifts: { plume: THREE.Mesh }[] = []; // [left, right]
 	for (const side of [-1, 1]) {
 		const pod = new THREE.Group(); pod.name = side === 1 ? 'engine-pod-r' : 'engine-pod-l'; podGroups.push(pod); pod.position.set(POD.x, POD.y, side * POD.z); root.add(pod);
-		const body = new THREE.Group(); body.rotation.z = -Math.PI / 2; pod.add(body); // the geometry's polar axis (+Y) now points forward (+X)
+		// The thruster face (honeycomb grille) is the pod's local +X axis; `orient` turns it to point straight DOWN at rest. The pod then pivots about the span axis,
+		// so the nozzle swings aft to accelerate and forward to brake.
+		const orient = new THREE.Group(); orient.name = 'thruster'; orient.rotation.z = -Math.PI / 2; pod.add(orient);
+		const body = new THREE.Group(); body.rotation.z = -Math.PI / 2; orient.add(body); // the geometry's polar axis (+Y) now points along the thruster axis
 		addMesh(body, new THREE.SphereGeometry(POD.r, seg, Math.round(seg * 0.6)), ceramic, 'engine-sphere');
 		addMesh(body, new THREE.SphereGeometry(POD.r * 1.006, seg, Math.round(seg * 0.35), 0, Math.PI * 2, Math.PI * 0.72, Math.PI * 0.28), graphite, 'pod-rear-cap'); // dark rear band
 		addMesh(body, new THREE.SphereGeometry(POD.r * 1.008, seg, Math.round(seg * 0.35), 0, Math.PI * 2, 0, Math.PI * 0.3), graphite, 'intake-bowl'); // big black front bowl
 		const lipR = POD.r * Math.sin(Math.PI * 0.3);
 		const lip = addMesh(body, new THREE.TorusGeometry(lipR, 0.035, 8, seg * 2), steel, 'intake-ring'); lip.position.y = POD.r * Math.cos(Math.PI * 0.3); lip.rotation.x = Math.PI / 2; lip.castShadow = false;
 		// round honeycomb grille on the front pole
-		const grille = addMesh(pod, new THREE.CircleGeometry(0.5, seg), grilleMat, 'intake-grille'); grille.position.set(POD.r * 0.93, 0, 0); grille.rotation.y = Math.PI / 2; grille.castShadow = false;
-		const gring = addMesh(pod, new THREE.TorusGeometry(0.5, 0.03, 8, seg), steel, 'grille-ring'); gring.position.set(POD.r * 0.935, 0, 0); gring.rotation.y = Math.PI / 2; gring.castShadow = false;
+		const grille = addMesh(orient, new THREE.CircleGeometry(0.5, seg), grilleMat, 'intake-grille'); grille.position.set(POD.r * 0.93, 0, 0); grille.rotation.y = Math.PI / 2; grille.castShadow = false;
+		const gring = addMesh(orient, new THREE.TorusGeometry(0.5, 0.03, 8, seg), steel, 'grille-ring'); gring.position.set(POD.r * 0.935, 0, 0); gring.rotation.y = Math.PI / 2; gring.castShadow = false;
 		// six-pointed star vent on the rear pole
-		const vent = new THREE.Group(); vent.position.set(-POD.r * 0.8, 0, 0); vent.rotation.y = -Math.PI / 2; pod.add(vent);
+		const vent = new THREE.Group(); vent.position.set(-POD.r * 0.8, 0, 0); vent.rotation.y = -Math.PI / 2; orient.add(vent);
 		addMesh(vent, new THREE.CircleGeometry(0.58, seg), steel, 'vent-bowl').position.z = -0.01;
 		addMesh(vent, new THREE.ShapeGeometry(star), graphite, 'vent-star').position.z = 0.012;
 		// the thick neck from the fuselage out to the pod
 		const neck = addMesh(root, new THREE.CylinderGeometry(0.3, 0.3, POD.z - 0.45, 20), ceramic, 'pod-strut'); neck.rotation.x = Math.PI / 2; neck.position.set(POD.x, POD.y, side * (0.45 + (POD.z - 0.45) / 2));
-		// hover downwash: a wide blue-white curtain falling from the pod's belly
-		const lift = new THREE.Group(); lift.position.set(0, -POD.r * 0.55, 0); pod.add(lift);
+		// hover downwash: a wide blue-white curtain falling from the thruster face
+		const lift = new THREE.Group(); lift.position.set(0, -POD.r * 0.95, 0); pod.add(lift);
 		const ring = addMesh(lift, new THREE.TorusGeometry(0.01, 0.005, 4, 8), graphite, 'lift-ring'); ring.castShadow = false; ring.visible = false;
 		const curtainMat = curtainMats[side === 1 ? 1 : 0];
 		const plume = new THREE.Group(); plume.name = 'lift-plume'; lift.add(plume);
