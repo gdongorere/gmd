@@ -7,6 +7,7 @@ import { Box, Button, Checkbox, Flex, HStack, Slider, SliderFilledTrack, SliderT
 import { FiArrowLeft, FiCamera } from 'react-icons/fi';
 import { KESTREL, deltaV, thrustToWeight, G0 } from '@/lib/fly/ships/specs';
 import type { KestrelModel } from '@/lib/fly/ship/kestrel';
+import { ResourceTracker, trackObject } from '@/lib/fly/stream';
 
 type View = 'three-quarter' | 'side' | 'top' | 'front' | 'cockpit';
 const VIEWS: Record<View, { pos: [number, number, number]; target: [number, number, number] }> = {
@@ -58,6 +59,7 @@ export default function Hangar({ onFly }: { onFly?: () => void } = {}) {
         renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         const scene = new THREE.Scene();
+        const tracker = new ResourceTracker();
         scene.background = new THREE.Color(0x0a0d14);
         scene.fog = new THREE.Fog(0x0a0d14, 22, 60);
         const pmrem = new THREE.PMREMGenerator(renderer);
@@ -112,7 +114,7 @@ export default function Hangar({ onFly }: { onFly?: () => void } = {}) {
         setReady(true);
         cleanup = () => {
           cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); model.dispose();
-          floor.geometry.dispose(); ring.geometry.dispose(); ring2.geometry.dispose(); pmrem.dispose(); renderer.dispose(); canvas.remove(); api.current = null;
+          trackObject(tracker, scene, 'hangar'); tracker.disposeAll(); pmrem.dispose(); renderer.dispose(); canvas.remove(); api.current = null;
         };
       } catch (e) {
         setError(e instanceof Error ? e.message : 'The 3D view could not start on this device.');

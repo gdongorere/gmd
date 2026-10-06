@@ -10,6 +10,7 @@ import { buttonName } from '@/lib/input/gamepad';
 import { CameraRig, type ViewMode } from '@/lib/fly/camera';
 import { ARENA_HALF_SIZE, PAD_RADIUS, groundHeight } from '@/lib/fly/sim/terrain';
 import { NO_INPUT, clearEvent, initialState, resetToPad, step, telemetry, type FlightInput, type Telemetry } from '@/lib/fly/sim/flight';
+import { ResourceTracker, trackObject } from '@/lib/fly/stream';
 
 interface Hud extends Telemetry { event: string; assist: boolean }
 const EVENT_TEXT = { landed: 'Landed.', rough: 'Rough landing: slow your descent and level out.', crash: 'Hard impact: the ship was returned to the pad.' } as const;
@@ -68,6 +69,7 @@ export default function FlightArena({ onBack }: { onBack: () => void }) {
         renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
         const scene = new THREE.Scene();
+        const tracker = new ResourceTracker();
         const skyTop = new THREE.Color(0x4f86c8), skyHorizon = new THREE.Color(0xbcd4ea);
         scene.background = skyHorizon.clone();
         scene.fog = new THREE.Fog(skyHorizon, 220, 1100);
@@ -198,7 +200,7 @@ export default function FlightArena({ onBack }: { onBack: () => void }) {
         setReady(true);
         cleanup = () => {
           cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
-          actions.current = null; model.dispose(); tg.dispose(); gt.dispose(); pmrem.dispose(); renderer.dispose(); canvas.remove();
+          actions.current = null; model.dispose(); trackObject(tracker, scene, 'arena'); tracker.track(gt, 'arena', 'texture'); tracker.disposeAll(); pmrem.dispose(); renderer.dispose(); canvas.remove();
         };
       } catch (e) {
         setError(e instanceof Error ? e.message : 'The flight arena could not start on this device.');
