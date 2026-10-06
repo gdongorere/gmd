@@ -120,7 +120,7 @@ export function buildTileGeometry(h: HeightTile, opts: { skirt?: number; grid?: 
 		}
 	}
 
-	const quads = N * N + 4 * N;
+	const quads = N * N + 8 * N; // the skirts are doubled (once per winding) so they are lit correctly from either side with back-face culling
 	const indices = new Uint32Array(quads * 6);
 	let n = 0;
 	// Top surface, counter-clockwise seen from outside (east = +i, south = +j, outward = south × east → CCW is (a, c, b) below).
@@ -129,12 +129,14 @@ export function buildTileGeometry(h: HeightTile, opts: { skirt?: number; grid?: 
 		indices[n++] = a; indices[n++] = c; indices[n++] = bq;
 		indices[n++] = bq; indices[n++] = c; indices[n++] = d;
 	}
-	// Skirt quads between each edge and its dropped copy (winding chosen so the visible side faces outward).
-	edge.forEach((e, s) => {
+	// Skirt quads between each edge and its dropped copy, emitted in both windings: each side then faces its viewer, so with back-face culling
+	// the visible side is always lit with the (upward) vertex normal instead of a flipped one, which used to show as dark seams.
+	edge.forEach((e) => {
+		const base = skirtBase[edge.indexOf(e)];
 		for (let i = 0; i < N; i++) {
-			const t0 = e[i], t1 = e[i + 1], s0 = skirtBase[s] + i, s1 = s0 + 1;
-			if (s === 0 || s === 3) { indices[n++] = t0; indices[n++] = s0; indices[n++] = t1; indices[n++] = t1; indices[n++] = s0; indices[n++] = s1; }
-			else { indices[n++] = t0; indices[n++] = t1; indices[n++] = s0; indices[n++] = t1; indices[n++] = s1; indices[n++] = s0; }
+			const t0 = e[i], t1 = e[i + 1], s0 = base + i, s1 = s0 + 1;
+			indices[n++] = t0; indices[n++] = s0; indices[n++] = t1; indices[n++] = t1; indices[n++] = s0; indices[n++] = s1;
+			indices[n++] = t0; indices[n++] = t1; indices[n++] = s0; indices[n++] = t1; indices[n++] = s1; indices[n++] = s0;
 		}
 	});
 

@@ -8,6 +8,8 @@ import { FiArrowLeft } from 'react-icons/fi';
 import { usePadFrames } from '@/components/input/usePad';
 import { buttonName } from '@/lib/input/gamepad';
 import { CameraRig, type ViewMode } from '@/lib/fly/camera';
+import { podTargets } from '@/lib/fly/ship/pods';
+import { KESTREL } from '@/lib/fly/ships/specs';
 import { ARENA_HALF_SIZE, PAD_RADIUS, groundHeight } from '@/lib/fly/sim/terrain';
 import { NO_INPUT, clearEvent, initialState, resetToPad, step, telemetry, type FlightInput, type Telemetry } from '@/lib/fly/sim/flight';
 import { ResourceTracker, trackObject } from '@/lib/fly/stream';
@@ -182,8 +184,7 @@ export default function FlightArena({ onBack }: { onBack: () => void }) {
           model.root.position.copy(state.pos); model.root.quaternion.copy(state.q);
           const tel = telemetry(state);
           model.setGear(state.gear ? 1 : 0);
-          model.setThrust(Math.max(tel.hover, tel.main));
-          model.setCruise(Math.min(1, tel.main * 3));
+                    model.setPods(podTargets({ hoverN: tel.hoverN, mainN: tel.mainN, yaw: input.yaw, roll: input.roll }, KESTREL.thrust.hover));
           model.update(dt);
           if (f.view !== lastView) { rig.setMode(f.view); lastView = f.view; model.setFirstPerson(f.view === 'first'); }
           rig.update(dt, state.pos, state.q, state.vel);

@@ -15,7 +15,7 @@ describe('tile geometry from real elevation', () => {
 
 	it('has the expected vertex/triangle counts (grid + skirts)', () => {
 		expect(g.positions.length / 3).toBe(W * W + 4 * W);
-		expect(g.indices.length / 3).toBe(2 * (GRID * GRID + 4 * GRID));
+		expect(g.indices.length / 3).toBe(2 * (GRID * GRID + 8 * GRID));
 	});
 	it('vertices lie on the real surface: radius matches ellipsoid + height', () => {
 		const k = Math.floor(W / 2) * W + Math.floor(W / 2);

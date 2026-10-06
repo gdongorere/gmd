@@ -32,12 +32,13 @@ export const overpassFetch: BuildingsDeps['fetchJson'] = async (query, signal) =
 export class BuildingsLayer {
 	readonly root = new THREE.Group();
 	private recs = new Map<string, CellRec>();
-	private material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.02 });
+	private material: THREE.Material;
 	private busy = false;
 	private disposed = false;
 	enabled = true;
 
-	constructor(private deps: BuildingsDeps, private tracker: ResourceTracker, private ground: (latDeg: number, lonDeg: number) => number | null, private maxCells = 16) {
+	constructor(private deps: BuildingsDeps, private tracker: ResourceTracker, private ground: (latDeg: number, lonDeg: number) => number | null, private maxCells = 16, cheap = false) {
+		this.material = cheap ? new THREE.MeshLambertMaterial({ vertexColors: true }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.02 });
 		this.tracker.track(this.material, 'buildings', 'material');
 	}
 

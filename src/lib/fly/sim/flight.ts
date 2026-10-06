@@ -24,6 +24,8 @@ export interface FlightState {
 	/** Thrust actually produced this step (N), for effects and sound. */
 	hover: number;
 	main: number;
+	/** Forward thrust, newtons, signed (negative while braking): drives the pod tilt. */
+	mainSigned: number;
 }
 
 export interface FlightInput {
@@ -63,7 +65,7 @@ export function initialState(spec: ShipSpec = KESTREL): FlightState {
 	const h = groundHeight(0, 0);
 	return {
 		pos: new THREE.Vector3(0, h + FOOT_OFFSET.down, 0), vel: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(),
-		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0,
+		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0, mainSigned: 0,
 	};
 }
 
@@ -140,7 +142,7 @@ function substep(s: FlightState, input: FlightInput, dt: number, opts: FlightOpt
 	// --- propellant: ṁ = F / (Isp g0); mass falls as it burns ---
 	const burn = (Math.abs(hover) + Math.abs(main) + Math.abs(rcs) * 0.2) / (spec.isp * G0) * dt;
 	s.propellant = Math.max(0, s.propellant - burn);
-	s.hover = hover; s.main = Math.abs(main);
+	s.hover = hover; s.main = Math.abs(main); s.mainSigned = main;
 
 	// --- ground contact ---
 	const foot = s.gear ? FOOT_OFFSET.down : FOOT_OFFSET.up;
@@ -172,12 +174,12 @@ export const clearEvent = (s: FlightState) => { s.event = null; };
 /** Reset to the pad. */
 export function resetToPad(s: FlightState, spec: ShipSpec = KESTREL) { Object.assign(s, initialState(spec)); }
 
-export interface Telemetry { speed: number; altitude: number; verticalSpeed: number; heading: number; fuelFraction: number; mass: number; hover: number; main: number }
+export interface Telemetry { hoverN: number; mainN: number; speed: number; altitude: number; verticalSpeed: number; heading: number; fuelFraction: number; mass: number; hover: number; main: number }
 export function telemetry(s: FlightState, spec: ShipSpec = KESTREL, ground: (x: number, z: number) => number = groundHeight): Telemetry {
 	const foot = s.gear ? FOOT_OFFSET.down : FOOT_OFFSET.up;
 	const { fwd } = axes(s.q);
 	return {
-		speed: s.vel.length(), altitude: Math.max(0, s.pos.y - foot - ground(s.pos.x, s.pos.z)), verticalSpeed: s.vel.y,
+		hoverN: s.hover, mainN: s.mainSigned, speed: s.vel.length(), altitude: Math.max(0, s.pos.y - foot - ground(s.pos.x, s.pos.z)), verticalSpeed: s.vel.y,
 		heading: (((Math.atan2(fwd.z, fwd.x) * 180) / Math.PI) + 360) % 360, fuelFraction: s.propellant / spec.mass.propellant,
 		mass: totalMass(s, spec), hover: s.hover / spec.thrust.hover, main: s.main / spec.thrust.main,
 	};

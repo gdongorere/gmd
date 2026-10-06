@@ -7,10 +7,12 @@ import { FiArrowLeft } from 'react-icons/fi';
 import { usePadFrames } from '@/components/input/usePad';
 import { buttonName } from '@/lib/input/gamepad';
 import { CameraRig, type ViewMode } from '@/lib/fly/camera';
+import { podTargets } from '@/lib/fly/ship/pods';
+import { KESTREL } from '@/lib/fly/ships/specs';
 import { NO_INPUT, type FlightInput } from '@/lib/fly/sim/flight';
 import { PLACES, placeById } from '@/lib/fly/earth/places';
 import TouchControls from './TouchControls';
-import { useLandscape, useTouchDevice } from './useLandscape';
+import { useTouchDevice } from './useLandscape';
 
 interface Hud {
   lat: number; lon: number; msl: number; agl: number; speed: number; vs: number; heading: number; mach: number; fuel: number; mass: number;
@@ -42,16 +44,14 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
   const pad = useRef<FlightInput>({ ...NO_INPUT });
   const touchInput = useRef<FlightInput>({ ...NO_INPUT });
   const isTouch = useTouchDevice();
-  const { portrait, goLandscape } = useLandscape(isTouch);
   const padActive = useRef(false);
-  const actions = useRef<{ respawn: () => void; gear: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
+  const actions = useRef<{ respawn: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
 
   usePadFrames(({ pad: p, pressed }) => {
     padActive.current = Math.abs(p.lx) + Math.abs(p.ly) + Math.abs(p.rx) + Math.abs(p.ry) + p.l2 + p.r2 > 0.05 || p.down.l1 || p.down.r1;
     pad.current = { collective: p.r2 - p.l2, forward: -p.ly, strafe: p.lx, yaw: p.rx, pitch: p.ry, roll: (p.down.r1 ? 1 : 0) - (p.down.l1 ? 1 : 0) };
     for (const c of pressed) {
       if (c === 'triangle') actions.current?.view();
-      else if (c === 'square') actions.current?.gear();
       else if (c === 'circle') actions.current?.respawn();
       else if (c === 'options') setHideUi((v) => !v);
     }
@@ -85,42 +85,49 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         void atmo; void flight;
         if (disposed) return;
 
+        const qp = new URLSearchParams(window.location.search);
+        const coarse = !!window.matchMedia?.('(pointer: coarse)').matches || qp.get('touch') === '1';
         const canvas = document.createElement('canvas');
         canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none';
         canvas.setAttribute('role', 'img');
         canvas.setAttribute('aria-label', 'The Kestrel flying over the real Earth: terrain from elevation data, sky from atmospheric scattering, cities as 3D boxes.');
         el.prepend(canvas);
-        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: true });
+        const lowGuess = coarse || qp.get('q') === 'low';
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowGuess, powerPreference: 'high-performance', logarithmicDepthBuffer: !lowGuess });
         const gl = renderer.getContext();
         const ext = gl.getExtension('WEBGL_debug_renderer_info');
         const soft = /swiftshader|llvmpipe|software/i.test(ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '');
-        renderer.setPixelRatio(soft ? 0.5 : Math.min(window.devicePixelRatio || 1, 1.5));
-        renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        const lowQ = soft || lowGuess;
+        // Resolution governor: starts modest on weak devices and follows the measured frame time (never below 0.45× or above the device's own ratio).
+        const prMax = lowQ ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+        let pr = soft ? 0.5 : lowQ ? 0.7 : prMax;
+        renderer.setPixelRatio(pr);
+        renderer.shadowMap.enabled = !lowQ; renderer.shadowMap.type = THREE.PCFShadowMap;
         renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
 
         const scene = new THREE.Scene();
         scene.fog = new THREE.FogExp2(0x9fb8d8, 2e-5);
         const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 5e7);
         const sunLight = new THREE.DirectionalLight(0xffffff, 3);
-        sunLight.castShadow = true;
-        sunLight.shadow.mapSize.set(soft ? 1024 : 2048, soft ? 1024 : 2048);
+        sunLight.castShadow = !lowQ;
+        sunLight.shadow.mapSize.set(1024, 1024);
         Object.assign(sunLight.shadow.camera, { left: -30, right: 30, top: 30, bottom: -30, near: 1, far: 400 });
         sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.05;
         const hemi = new THREE.HemisphereLight(0x88aaff, 0x443322, Math.PI);
         scene.add(sunLight, sunLight.target, hemi);
 
-        const sky = skyMod.createSky();
+        const sky = skyMod.createSky(lowQ ? 'low' : 'high');
         scene.add(sky.mesh);
 
         const providers = imagery.DEFAULT_PROVIDERS;
         const loadImage = loaders.makeImageLoader(providers);
-        const manager = new earth.EarthManager({ loadHeights: loadTerrariumTile, loadImage }, { tolerance: soft ? 5 : 3, maxTiles: soft ? 260 : 500, maxConcurrent: 6 });
+        const manager = new earth.EarthManager({ loadHeights: loadTerrariumTile, loadImage }, { tolerance: lowQ ? 5 : 3, maxTiles: lowQ ? 200 : 500, maxConcurrent: lowQ ? 4 : 6, maxBuildsPerFrame: lowQ ? 1 : 2, cheapMaterials: lowQ });
         scene.add(manager.root);
-        const buildings = new bl.BuildingsLayer({ fetchJson: bl.overpassFetch as never }, manager.tracker, (la, lo) => manager.field.height(lo, la));
+        const buildings = new bl.BuildingsLayer({ fetchJson: bl.overpassFetch as never }, manager.tracker, (la, lo) => manager.field.height(lo, la), 16, lowQ);
         scene.add(buildings.root);
 
         const dust = new Dust(); scene.add(dust.points);
-        const model = buildKestrel({ glass: soft ? 'simple' : 'physical', detail: soft ? 32 : 56 });
+        const model = buildKestrel({ glass: lowQ ? 'simple' : 'physical', detail: lowQ ? 24 : 56, cheap: lowQ });
         model.root.traverse((o) => { if ((o as import('three').Mesh).isMesh) (o as import('three').Mesh).castShadow = true; });
         scene.add(model.root);
 
@@ -143,11 +150,10 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           spawnInfo = { lat, lon, hdg, alt, pending: true };
           Object.assign(state, sim.spawnOnGround(lat, lon, hdg, 0));
           frame.setAnchor([state.pos.x, state.pos.y, state.pos.z]);
-          rig.snap();
+          rig.snap(); gearDown = true; gearPos = 1;
         };
         actions.current = {
           respawn: () => teleport(spawnInfo.lat, spawnInfo.lon, spawnInfo.hdg, 0),
-          gear: () => { state.gear = !state.gear; },
           view: () => setView((v) => (v === 'first' ? 'third' : 'first')),
           teleport,
           timeShift: (h) => { timeOffsetMs = h === 'now' ? 0 : timeOffsetMs + h * 3600_000; },
@@ -162,7 +168,6 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           else if (k === 'v') actions.current?.view();
           else if (k === '1') setView('first');
           else if (k === '3') setView('third');
-          else if (k === 'g') actions.current?.gear();
           else if (k === 'r') actions.current?.respawn();
           else if (k === 'i') setHideUi((v) => !v);
           else if (k === 'h') setHoverAssist((v) => !v);
@@ -182,14 +187,23 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         const v3 = new THREE.Vector3(), sunLocal = new THREE.Vector3(), upLocal = new THREE.Vector3(), shipLocal = new THREE.Vector3(), velLocal = new THREE.Vector3(), qLocal = new THREE.Quaternion();
         const mEcef3 = new THREE.Matrix3(), mInertial = new THREE.Matrix3(), rz = new THREE.Matrix3();
         let lit = light.lightingFor(10, 30), litAt = -1e9, sunE: [number, number, number] = [1, 0, 0], gast = 0, sunAt = -1e9;
+        let emaDt = 0.02, govAt = 0, gearPos = 1, gearDown = true;
         let lastView: ViewMode = 'third', eventText = '', eventUntil = 0, raf = 0, last = performance.now(), acc = 0, hudAt = 0;
         const rd = (n: number, d = 0) => Number(n.toFixed(d));
 
         const loop = (t: number) => {
           raf = requestAnimationFrame(loop);
           if (document.hidden) { last = t; return; }
-          const dt = Math.min(0.1, (t - last) / 1000); last = t;
+          const rawDt = (t - last) / 1000;
+          const dt = Math.min(0.1, rawDt); last = t;
           const f = flags.current;
+          // frame-time governor
+          emaDt += (Math.min(0.25, rawDt) - emaDt) * 0.08;
+          if (t - govAt > 1200) {
+            govAt = t;
+            if (emaDt > 0.036 && pr > 0.45) { pr = Math.max(0.45, pr * 0.85); renderer.setPixelRatio(pr); fit(); }
+            else if (emaDt < 0.021 && pr < prMax) { pr = Math.min(prMax, pr * 1.1); renderer.setPixelRatio(pr); fit(); }
+          }
           manager.imageryEnabled = f.imageryOn; buildings.enabled = f.buildingsOn;
 
           const kin = keyboardInput(), pin = pad.current;
@@ -226,9 +240,12 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           frame.toLocal(state.pos, shipLocal); frame.quatToLocal(state.q, qLocal); frame.dirToLocal(state.vel, velLocal);
           const tel = sim.earthTelemetry(state, manager.terrain);
           model.root.position.copy(shipLocal); model.root.quaternion.copy(qLocal);
-          model.setGear(state.gear ? 1 : 0);
-          model.setThrust(Math.max(tel.hover, tel.main));
-          model.setCruise(Math.min(1, tel.main * 3));
+          // Automatic landing gear: down below 15 m above the ground, up (and hidden) above 30 m.
+          if (gearDown && tel.altitudeAgl > 30) gearDown = false; else if (!gearDown && tel.altitudeAgl < 15) gearDown = true;
+          state.gear = gearDown;
+          gearPos += Math.sign((gearDown ? 1 : 0) - gearPos) * Math.min(Math.abs((gearDown ? 1 : 0) - gearPos), dt * 0.8);
+          model.setGear(gearPos);
+                    model.setPods(podTargets({ hoverN: tel.hoverN, mainN: tel.mainN, yaw: input.yaw, roll: input.roll }, KESTREL.thrust.hover));
           model.update(dt);
           {
             const groundY = shipLocal.y - tel.altitudeAgl - (state.gear ? 2.03 : 1.3);
@@ -238,6 +255,13 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           rig.update(dt, shipLocal, qLocal, velLocal);
           camera.position.copy(rig.pose.pos); camera.quaternion.copy(rig.pose.quat);
           if (Math.abs(camera.fov - rig.fov) > 0.01) { camera.fov = rig.fov; camera.near = f.view === 'first' ? 0.05 : 0.3; camera.updateProjectionMatrix(); }
+          if (!renderer.capabilities.logarithmicDepthBuffer) {
+            // Standard depth buffer (phones): fit near/far to the altitude so the precision goes where the eye is looking.
+            const h = Math.max(10, tel.altitudeMsl);
+            const far = Math.min(4e7, 1.15 * Math.sqrt(2 * 6371000 * h + h * h) + 160000);
+            const near = Math.max(f.view === 'first' ? 0.1 : 0.3, far / 3.2e6);
+            if (Math.abs(far - camera.far) / camera.far > 0.05 || Math.abs(near - camera.near) / camera.near > 0.05) { camera.far = far; camera.near = near; camera.updateProjectionMatrix(); }
+          }
           camera.updateMatrixWorld();
 
           // Time, Sun and lighting (the Sun's real position at the chosen instant).
@@ -253,7 +277,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           renderer.toneMappingExposure += (lit.exposure - renderer.toneMappingExposure) * Math.min(1, dt * 1.5);
           sunLight.color.setRGB(lit.sunColor[0], lit.sunColor[1], lit.sunColor[2]);
           sunLight.intensity = lit.sunIntensity;
-          sunLight.castShadow = sunElev > 1;
+          sunLight.castShadow = !lowQ && sunElev > 1;
           sunLight.position.copy(shipLocal).addScaledVector(sunLocal, 150); sunLight.target.position.copy(shipLocal);
           hemi.color.setRGB(lit.skyColor[0], lit.skyColor[1], lit.skyColor[2]); hemi.groundColor.setRGB(lit.groundColor[0], lit.groundColor[1], lit.groundColor[2]); hemi.intensity = Math.PI;
           const fog = scene.fog as import('three').FogExp2;
@@ -271,7 +295,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           buildings.update(frame, tel.lat, tel.lon, tel.altitudeAgl, t, manager.stats.underfootReady);
 
           renderer.render(scene, camera);
-          if (t - hudAt > 120) {
+          if (t - hudAt > (lowQ ? 300 : 120)) {
             hudAt = t;
             const bs = buildings.stats;
             setHud({
@@ -285,7 +309,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         };
         raf = requestAnimationFrame(loop);
         setReady(true);
-        (window as unknown as { __earth?: unknown }).__earth = { state, manager, buildings, teleport, get lit() { return lit; } };
+        (window as unknown as { __earth?: unknown }).__earth = { state, manager, buildings, model, teleport, get lit() { return lit; } };
         cleanup = () => {
           cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
           actions.current = null; delete (window as unknown as { __earth?: unknown }).__earth;
@@ -339,9 +363,9 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             <Text fontWeight={700} color="content.primary" mb={1}>Controls</Text>
             <Text><b>Space / Shift</b> climb / descend · <b>W S</b> thrust / retro · <b>A D</b> strafe</Text>
             <Text><b>Q E</b> yaw · <b>↑ ↓</b> pitch · <b>← →</b> roll</Text>
-            <Text><b>V</b> view · <b>G</b> gear · <b>H</b> hover assist · <b>R</b> back to takeoff · <b>I</b> hide</Text>
+            <Text><b>V</b> view · <b>H</b> hover assist · <b>R</b> back to takeoff · <b>I</b> hide</Text>
             <Text><b>[ ]</b> time of day ∓1 h (<b>Shift</b> ∓6 h)</Text>
-            <Text mt={1}>Controller: sticks fly, R2/L2 climb/descend, {buttonName('triangle', 'playstation')} view, {buttonName('square', 'playstation')} gear, {buttonName('circle', 'playstation')} back.</Text>
+            <Text mt={1}>Controller: sticks fly, R2/L2 climb/descend, {buttonName('triangle', 'playstation')} view, {buttonName('circle', 'playstation')} back.</Text>
             <Flex gap={3} mt={2} wrap="wrap">
               <Checkbox size="sm" isChecked={hoverAssist} onChange={(e) => setHoverAssist(e.target.checked)}>Hover assist</Checkbox>
               <Checkbox size="sm" isChecked={levelAssist} onChange={(e) => setLevelAssist(e.target.checked)}>Level assist</Checkbox>
@@ -384,15 +408,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           </Flex>
         </>
       )}
-      {isTouch && ready && !portrait && <TouchControls input={touchInput} actions={() => actions.current} />}
-      {isTouch && portrait && (
-        <Flex position="absolute" inset={0} zIndex={20} bg="rgba(8,10,20,0.94)" direction="column" align="center" justify="center" gap={4} px={8} textAlign="center" data-testid="rotate-overlay">
-          <Text fontSize="4xl" aria-hidden="true">⟳</Text>
-          <Text fontWeight={700}>Turn your phone sideways to fly</Text>
-          <Text fontSize="sm" color="content.secondary">The controls need a landscape screen.</Text>
-          <Button colorScheme="orange" onClick={goLandscape} data-testid="go-landscape">Go landscape (fullscreen)</Button>
-        </Flex>
-      )}
+      {isTouch && ready && <TouchControls input={touchInput} actions={() => actions.current} />}
       <VisuallyHidden role="status" aria-live="polite">{hud?.event ?? ''}</VisuallyHidden>
     </Box>
   );

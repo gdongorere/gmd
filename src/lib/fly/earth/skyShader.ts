@@ -72,8 +72,8 @@ void main() {
 		vec2 pl = raySphere(pos, dir, Rp);
 		hits = pl.x > 0.0 && pl.x < pl.y;
 		if (hits) t1 = min(t1, pl.x);
-		const int N = 16;
-		const int NL = 6;
+		const int N = SKY_STEPS;
+		const int NL = SKY_LIGHT_STEPS;
 		float ds = (t1 - t0) / float(N);
 		float optR = 0.0, optM = 0.0;
 		vec3 sumR = vec3(0.0), sumM = vec3(0.0);
@@ -138,14 +138,14 @@ export interface SkyUniforms {
 	uSunI: { value: number };
 }
 
-export function createSky(): { mesh: THREE.Mesh; uniforms: SkyUniforms; dispose: () => void } {
+export function createSky(quality: 'high' | 'low' = 'high'): { mesh: THREE.Mesh; uniforms: SkyUniforms; dispose: () => void } {
 	const uniforms: SkyUniforms = {
 		uCamUp: { value: new THREE.Vector3(0, 1, 0) }, uAlt: { value: 10 }, uSun: { value: new THREE.Vector3(1, 1, 0).normalize() },
 		uToInertial: { value: new THREE.Matrix3() }, uToEcef: { value: new THREE.Matrix3() }, uStars: { value: 0 }, uSunI: { value: SKY.sunIntensity },
 	};
 	const geo = new THREE.SphereGeometry(10, 48, 24);
-	const mat = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, uniforms: uniforms as unknown as Record<string, THREE.IUniform>, side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: true, fog: false });
+	const mat = new THREE.ShaderMaterial({ vertexShader: vertex, fragmentShader: fragment, uniforms: uniforms as unknown as Record<string, THREE.IUniform>, side: THREE.BackSide, depthWrite: false, depthTest: true, depthFunc: THREE.LessEqualDepth, toneMapped: true, fog: false, defines: { SKY_STEPS: quality === 'low' ? 8 : 16, SKY_LIGHT_STEPS: quality === 'low' ? 3 : 6 } });
 	const mesh = new THREE.Mesh(geo, mat);
-	mesh.frustumCulled = false; mesh.renderOrder = -1000;
+	mesh.frustumCulled = false; mesh.renderOrder = 1000; // drawn after the terrain and only where nothing is in front: no wasted work behind the ground
 	return { mesh, uniforms, dispose: () => { geo.dispose(); mat.dispose(); } };
 }
