@@ -9,6 +9,8 @@ import { buttonName } from '@/lib/input/gamepad';
 import { CameraRig, type ViewMode } from '@/lib/fly/camera';
 import { NO_INPUT, type FlightInput } from '@/lib/fly/sim/flight';
 import { PLACES, placeById } from '@/lib/fly/earth/places';
+import TouchControls from './TouchControls';
+import { useLandscape, useTouchDevice } from './useLandscape';
 
 interface Hud {
   lat: number; lon: number; msl: number; agl: number; speed: number; vs: number; heading: number; mach: number; fuel: number; mass: number;
@@ -31,12 +33,16 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [placeId, setPlaceId] = useState('zurich');
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get('place'); if (id && placeById(id)) setPlaceId(id); }, []);
   const [coords, setCoords] = useState('');
   const [coordError, setCoordError] = useState('');
   const flags = useRef({ view, hoverAssist, levelAssist, buildingsOn, imageryOn });
   flags.current = { view, hoverAssist, levelAssist, buildingsOn, imageryOn };
   const keys = useRef(new Set<string>());
   const pad = useRef<FlightInput>({ ...NO_INPUT });
+  const touchInput = useRef<FlightInput>({ ...NO_INPUT });
+  const isTouch = useTouchDevice();
+  const { portrait, goLandscape } = useLandscape(isTouch);
   const padActive = useRef(false);
   const actions = useRef<{ respawn: () => void; gear: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
 
@@ -185,7 +191,9 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           manager.imageryEnabled = f.imageryOn; buildings.enabled = f.buildingsOn;
 
           const kin = keyboardInput(), pin = pad.current;
-          const input: FlightInput = padActive.current ? { collective: pin.collective + kin.collective, forward: pin.forward + kin.forward, strafe: pin.strafe + kin.strafe, yaw: pin.yaw + kin.yaw, pitch: pin.pitch + kin.pitch, roll: pin.roll + kin.roll } : kin;
+          const tin = touchInput.current;
+          const base = padActive.current ? { collective: pin.collective + kin.collective, forward: pin.forward + kin.forward, strafe: pin.strafe + kin.strafe, yaw: pin.yaw + kin.yaw, pitch: pin.pitch + kin.pitch, roll: pin.roll + kin.roll } : kin;
+          const input: FlightInput = { collective: base.collective + tin.collective, forward: base.forward + tin.forward, strafe: base.strafe + tin.strafe, yaw: base.yaw + tin.yaw, pitch: base.pitch + tin.pitch, roll: base.roll + tin.roll };
 
           // First seat on the real ground once the terrain under the spawn point has arrived.
           if (spawnInfo.pending && manager.stats.underfootReady) {
@@ -307,21 +315,21 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         <>
           <HStack position="absolute" top={3} left={3} spacing={2} wrap="wrap" maxW="calc(100% - 24px)" align="start">
             <Button size="sm" variant="glass" leftIcon={<FiArrowLeft aria-hidden="true" />} onClick={onBack}>Hangar</Button>
-            <Flex {...glass} px={1} py={1} gap={1} role="group" aria-label="Camera view">
+            {!isTouch && <Flex {...glass} px={1} py={1} gap={1} role="group" aria-label="Camera view">
               <Button size="xs" variant={view === 'first' ? 'solid' : 'ghost'} aria-pressed={view === 'first'} onClick={() => setView('first')}>First person</Button>
               <Button size="xs" variant={view === 'third' ? 'solid' : 'ghost'} aria-pressed={view === 'third'} onClick={() => setView('third')}>Third person</Button>
-            </Flex>
+            </Flex>}
             <Flex {...glass} px={2} py={1} gap={2} align="center">
               <Select size="xs" w="210px" value={placeId} onChange={(e) => goPlace(e.target.value)} aria-label="Start from a place" data-testid="earth-place">
                 {PLACES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
-              <Input size="xs" w="150px" placeholder="lat, lon" value={coords} onChange={(e) => setCoords(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') goCoords(); }} aria-label="Go to latitude, longitude" aria-invalid={!!coordError} data-testid="earth-coords" />
-              <Button size="xs" onClick={goCoords}>Go</Button>
+              {!isTouch && <Input size="xs" w="150px" placeholder="lat, lon" value={coords} onChange={(e) => setCoords(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') goCoords(); }} aria-label="Go to latitude, longitude" aria-invalid={!!coordError} data-testid="earth-coords" />}
+              {!isTouch && <Button size="xs" onClick={goCoords}>Go</Button>}
             </Flex>
           </HStack>
           {coordError && <Text position="absolute" top="52px" left={3} fontSize="xs" color="red.300" role="alert">{coordError}</Text>}
 
-          <Box {...glass} position="absolute" top={{ base: '130px', md: '60px' }} right={3} p={3} maxW="260px" fontSize="xs" color="content.secondary" data-testid="earth-help">
+          {!isTouch && <Box {...glass} position="absolute" top={{ base: '130px', md: '60px' }} right={3} p={3} maxW="260px" fontSize="xs" color="content.secondary" data-testid="earth-help">
             <Text fontWeight={700} color="content.primary" mb={1}>Controls</Text>
             <Text><b>Space / Shift</b> climb / descend · <b>W S</b> thrust / retro · <b>A D</b> strafe</Text>
             <Text><b>Q E</b> yaw · <b>↑ ↓</b> pitch · <b>← →</b> roll</Text>
@@ -335,17 +343,17 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Checkbox size="sm" isChecked={buildingsOn} onChange={(e) => setBuildingsOn(e.target.checked)}>Buildings</Checkbox>
             </Flex>
             <Flex gap={1} mt={2} align="center"><Text>Time</Text><Button size="xs" onClick={() => actions.current?.timeShift(-1)} aria-label="One hour earlier">−1 h</Button><Button size="xs" onClick={() => actions.current?.timeShift(1)} aria-label="One hour later">+1 h</Button><Button size="xs" onClick={() => actions.current?.timeShift('now')}>Now</Button></Flex>
-          </Box>
+          </Box>}
 
-          <Flex position="absolute" top={{ base: '170px', md: '64px' }} left={3} direction="column" gap={1} pointerEvents="none" maxW="320px">
+          <Flex position="absolute" top={isTouch ? '96px' : { base: '170px', md: '64px' }} left={3} direction="column" gap={1} pointerEvents="none" maxW={isTouch ? '240px' : '320px'} fontSize={isTouch ? '10px' : undefined}>
             {hud && !hud.underfoot && !hud.offline && <Text {...glass} px={3} py={1} fontSize="sm" data-testid="earth-loading">Loading the ground under {place?.name.split(',')[0] ?? 'you'}… {fmt(hud.terrainReady * 100)}%</Text>}
             {hud?.offline && <Text {...glass} px={3} py={1} fontSize="xs" color="orange.200" data-testid="earth-offline">Elevation data is unreachable from here: some ground is flat sea level, not real terrain.</Text>}
-            {hud && hud.imagery === 0 && hud.tiles > 0 && imageryOn && <Text {...glass} px={3} py={1} fontSize="xs" color="content.muted">Satellite imagery not available: colours are estimated from height, slope and latitude.</Text>}
+            {!isTouch && hud && hud.imagery === 0 && hud.tiles > 0 && imageryOn && <Text {...glass} px={3} py={1} fontSize="xs" color="content.muted">Satellite imagery not available: colours are estimated from height, slope and latitude.</Text>}
             {hud && hud.buildings > 0 && <Text {...glass} px={3} py={1} fontSize="xs" color="content.muted" data-testid="earth-buildings">{hud.buildings} buildings (OpenStreetMap){hud.estimated > 0.05 ? `; heights guessed for ${fmt(hud.estimated * 100)}%` : ''}</Text>}
-            {hud?.buildingsFailed && buildingsOn && hud.agl < 1500 && <Text {...glass} px={3} py={1} fontSize="xs" color="content.muted">Building data not reachable: no 3D buildings here.</Text>}
+            {!isTouch && hud?.buildingsFailed && buildingsOn && hud.agl < 1500 && <Text {...glass} px={3} py={1} fontSize="xs" color="content.muted">Building data not reachable: no 3D buildings here.</Text>}
           </Flex>
 
-          <Flex position="absolute" left={3} right={3} bottom={3} direction="column" align="center" gap={2} pointerEvents="none">
+          <Flex position="absolute" left={3} right={3} bottom={isTouch ? 'auto' : 3} top={isTouch ? '54px' : 'auto'} direction="column" align="center" gap={2} pointerEvents="none" fontSize={isTouch ? 'xs' : undefined}>
             {hud?.event && <Text {...glass} px={3} py={1} fontSize="sm" data-testid="earth-event">{hud.event}</Text>}
             {hud && hud.heat > 25 && <Text {...glass} px={3} py={1} fontSize="sm" color="orange.200">Re-entry heating {fmt(hud.heat)} W/cm² (damage is not modelled yet)</Text>}
             <Flex {...glass} px={4} py={2} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="sm" data-testid="earth-hud">
@@ -359,16 +367,25 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Text>HDG <b>{fmt(hud?.heading ?? 0)}</b>°</Text>
               <Text>FUEL <b>{fmt((hud?.fuel ?? 1) * 100)}</b>%</Text>
             </Flex>
-            <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="xs" color="content.muted" data-testid="earth-air">
+            {!isTouch && <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="xs" color="content.muted" data-testid="earth-air">
               <Text>AIR {fmt(hud?.pressure ?? 101.3, 1)} kPa · {fmt(hud?.temperature ?? 15, 0)} °C · q {fmt(hud?.q ?? 0, 1)} kPa</Text>
               <Text>{hud?.utc} · Sun {fmt(hud?.sunElev ?? 0, 0)}°</Text>
               {hud?.space && <Text>IN SPACE</Text>}
-            </Flex>
-            <Text fontSize="10px" color="content.muted" textAlign="center" maxW="900px" data-testid="earth-credits">
+            </Flex>}
+            {!isTouch && <Text fontSize="10px" color="content.muted" textAlign="center" maxW="900px" data-testid="earth-credits">
               Elevation: Mapzen/AWS Terrain Tiles (SRTM, GEBCO and others) · Imagery: Sentinel-2 cloudless 2016 by EOX (CC BY 4.0), NASA GIBS Blue Marble · Buildings: © OpenStreetMap contributors (ODbL) · Sun: astronomy-engine · Atmosphere: US Standard 1976. No wind or weather yet.
-            </Text>
+            </Text>}
           </Flex>
         </>
+      )}
+      {isTouch && ready && !portrait && <TouchControls input={touchInput} actions={() => actions.current} />}
+      {isTouch && portrait && (
+        <Flex position="absolute" inset={0} zIndex={20} bg="rgba(8,10,20,0.94)" direction="column" align="center" justify="center" gap={4} px={8} textAlign="center" data-testid="rotate-overlay">
+          <Text fontSize="4xl" aria-hidden="true">⟳</Text>
+          <Text fontWeight={700}>Turn your phone sideways to fly</Text>
+          <Text fontSize="sm" color="content.secondary">The controls need a landscape screen.</Text>
+          <Button colorScheme="orange" onClick={goLandscape} data-testid="go-landscape">Go landscape (fullscreen)</Button>
+        </Flex>
       )}
       <VisuallyHidden role="status" aria-live="polite">{hud?.event ?? ''}</VisuallyHidden>
     </Box>
