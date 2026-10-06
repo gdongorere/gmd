@@ -10,7 +10,7 @@ import * as THREE from 'three';
 export type ViewMode = 'first' | 'third';
 
 /** The pilot's eye in ship coordinates: the left seat (z = +0.42) inside the bubble, head height. See kestrel.ts (cockpit at 3.4, 0.45). */
-export const PILOT_EYE = new THREE.Vector3(3.27, 0.73, 0.42);
+export const PILOT_EYE = new THREE.Vector3(1.98, 0.6, 0.36);
 export const FIRST_PERSON_FOV = 78;
 export const THIRD_PERSON_FOV = 55;
 

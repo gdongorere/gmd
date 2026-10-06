@@ -15,7 +15,7 @@ const VIEWS: Record<View, { pos: [number, number, number]; target: [number, numb
   side: { pos: [0.5, 0.6, 15], target: [0.2, 0.1, 0] },
   top: { pos: [0.2, 15, 0.1], target: [0.2, 0, 0] },
   front: { pos: [15, 1.0, 0.1], target: [0, 0.2, 0] },
-  cockpit: { pos: [3.9, 0.7, 0.0], target: [8, 0.7, 0] },
+  cockpit: { pos: [1.98, 0.85, 0.36], target: [8, 0.85, 0.36] },
 };
 const VIEW_LABEL: Record<View, string> = { 'three-quarter': '3/4', side: 'Side', top: 'Top', front: 'Front', cockpit: 'Cockpit' };
 

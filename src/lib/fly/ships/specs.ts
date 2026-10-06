@@ -29,7 +29,7 @@ export const KESTREL: ShipSpec = {
 	id: 'kestrel',
 	name: 'Kestrel',
 	blurb: 'A small bubble-canopy VTOL scout. Quick, glassy and light enough to land almost anywhere.',
-	dims: { length: 9.5, span: 8.0, height: 3.8 },
+	dims: { length: 9.5, span: 8.3, height: 4.35 },
 	mass: { dry: 5_500, propellant: 3_000 },
 	isp: 3_500,
 	thrust: { main: 120_000, hover: 100_000 },
