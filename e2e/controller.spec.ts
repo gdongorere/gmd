@@ -14,6 +14,16 @@ const setPad = (page: Page, p: FakePad | null, buttonCount = 18) => page.evaluat
     buttons: Array.from({ length: n }, (_, i) => ({ pressed: p.pressed.includes(i), value: p.pressed.includes(i) ? 1 : 0 })),
   };
 }, { p, n: buttonCount });
+/** Holds an input until `done()` is true (the page polls the pad once per frame, and software rendering can make frames slow), releasing between tries. */
+async function holdUntil(page: Page, rest: FakePad, input: FakePad, count: number, done: () => Promise<boolean>) {
+  for (let i = 0; i < 8; i++) {
+    await setPad(page, input, count);
+    await page.waitForTimeout(700);
+    if (await done()) { await setPad(page, rest, count); return; }
+    await setPad(page, rest, count);
+    await page.waitForTimeout(500);
+  }
+}
 const standard = (pressed: number[] = [], axes = [0, 0, 0, 0]): FakePad => ({ id: DS4_ID, mapping: 'standard', axes, pressed });
 
 test.describe('controller support', () => {
@@ -56,20 +66,18 @@ test.describe('controller support', () => {
       if (!(await wizard.isVisible())) break;
       const prompt = (await page.getByTestId('wizard-prompt').innerText()).trim();
       const stick = Object.entries(stickAxis).find(([k]) => prompt.includes(k));
-      // Let the pad rest long enough to be armed, then act.
-      await page.waitForTimeout(400);
+      let input: FakePad | null = null;
       if (stick) {
         const axes = [...base.axes]; axes[stick[1][0]] = stick[1][1];
-        await setPad(page, { ...base, axes }, 12);
+        input = { ...base, axes };
       } else if (/\(or skip\)/.test(prompt)) {
         await page.getByRole('button', { name: 'Skip' }).click();
         continue;
       } else {
-        await setPad(page, { ...base, pressed: [buttonIndex] }, 12);
+        input = { ...base, pressed: [buttonIndex] };
         buttonIndex = buttonIndex > 0 ? buttonIndex - 1 : 11;
       }
-      await expect(page.getByTestId('wizard-prompt')).not.toHaveText(prompt, { timeout: 10_000 }).catch(() => {});
-      await setPad(page, base, 12);
+      await holdUntil(page, base, input, 12, async () => !(await wizard.isVisible()) || (await page.getByTestId('wizard-prompt').innerText()).trim() !== prompt);
     }
     await expect(page.getByTestId('wizard')).toBeHidden({ timeout: 20_000 });
     await page.getByRole('button', { name: 'Save this mapping' }).click();
@@ -87,17 +95,13 @@ test.describe('controller support', () => {
     await page.getByRole('group', { name: 'Date and time' }).waitFor({ timeout: 60_000 });
     await setPad(page, standard());
     await expect(page.getByText('DualShock 4 connected')).toBeVisible({ timeout: 10_000 });
-    await setPad(page, standard([0])); // ✕
-    await page.waitForTimeout(150);
-    await setPad(page, standard());
+    const shown = async () => page.getByTestId('system3d').isVisible();
+    await holdUntil(page, standard(), standard([0]), 18, shown); // ✕
     await expect(page.getByTestId('system3d')).toBeVisible({ timeout: 20_000 });
-    await setPad(page, standard([13])); // D-pad down → next body
-    await page.waitForTimeout(150);
-    await setPad(page, standard());
+    await page.waitForTimeout(1500); // let the scene settle before the next press
+    await holdUntil(page, standard(), standard([13]), 18, async () => /Mercury/.test(await page.getByTestId('system3d-readout').innerText().catch(() => ''))); // D-pad down → next body
     await expect(page.getByTestId('system3d-readout')).toContainText(/Mercury/, { timeout: 30_000 });
-    await setPad(page, standard([1])); // ○
-    await page.waitForTimeout(150);
-    await setPad(page, standard());
+    await holdUntil(page, standard(), standard([1]), 18, async () => !(await shown())); // ○
     await expect(page.getByTestId('system3d')).toBeHidden({ timeout: 10_000 });
   });
 
