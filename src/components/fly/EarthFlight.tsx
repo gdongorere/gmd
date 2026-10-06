@@ -7,10 +7,12 @@ import { FiArrowLeft } from 'react-icons/fi';
 import { usePadFrames } from '@/components/input/usePad';
 import { buttonName } from '@/lib/input/gamepad';
 import { CameraRig, type ViewMode } from '@/lib/fly/camera';
+import { podTargets } from '@/lib/fly/ship/pods';
+import { KESTREL } from '@/lib/fly/ships/specs';
 import { NO_INPUT, type FlightInput } from '@/lib/fly/sim/flight';
 import { PLACES, placeById } from '@/lib/fly/earth/places';
 import TouchControls from './TouchControls';
-import { useLandscape, useTouchDevice } from './useLandscape';
+import { useTouchDevice } from './useLandscape';
 
 interface Hud {
   lat: number; lon: number; msl: number; agl: number; speed: number; vs: number; heading: number; mach: number; fuel: number; mass: number;
@@ -42,7 +44,6 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
   const pad = useRef<FlightInput>({ ...NO_INPUT });
   const touchInput = useRef<FlightInput>({ ...NO_INPUT });
   const isTouch = useTouchDevice();
-  const { portrait, goLandscape } = useLandscape(isTouch);
   const padActive = useRef(false);
   const actions = useRef<{ respawn: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
 
@@ -244,8 +245,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           state.gear = gearDown;
           gearPos += Math.sign((gearDown ? 1 : 0) - gearPos) * Math.min(Math.abs((gearDown ? 1 : 0) - gearPos), dt * 0.8);
           model.setGear(gearPos);
-          model.setThrust(Math.max(tel.hover, tel.main));
-          model.setCruise(Math.min(1, tel.main * 3));
+                    model.setPods(podTargets({ hoverN: tel.hoverN, mainN: tel.mainN, yaw: input.yaw, roll: input.roll }, KESTREL.thrust.hover));
           model.update(dt);
           {
             const groundY = shipLocal.y - tel.altitudeAgl - (state.gear ? 2.03 : 1.3);
@@ -309,7 +309,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         };
         raf = requestAnimationFrame(loop);
         setReady(true);
-        (window as unknown as { __earth?: unknown }).__earth = { state, manager, buildings, teleport, get lit() { return lit; } };
+        (window as unknown as { __earth?: unknown }).__earth = { state, manager, buildings, model, teleport, get lit() { return lit; } };
         cleanup = () => {
           cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
           actions.current = null; delete (window as unknown as { __earth?: unknown }).__earth;
@@ -408,15 +408,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           </Flex>
         </>
       )}
-      {isTouch && ready && !portrait && <TouchControls input={touchInput} actions={() => actions.current} />}
-      {isTouch && portrait && (
-        <Flex position="absolute" inset={0} zIndex={20} bg="rgba(8,10,20,0.94)" direction="column" align="center" justify="center" gap={4} px={8} textAlign="center" data-testid="rotate-overlay">
-          <Text fontSize="4xl" aria-hidden="true">⟳</Text>
-          <Text fontWeight={700}>Turn your phone sideways to fly</Text>
-          <Text fontSize="sm" color="content.secondary">The controls need a landscape screen.</Text>
-          <Button colorScheme="orange" onClick={goLandscape} data-testid="go-landscape">Go landscape (fullscreen)</Button>
-        </Flex>
-      )}
+      {isTouch && ready && <TouchControls input={touchInput} actions={() => actions.current} />}
       <VisuallyHidden role="status" aria-live="polite">{hud?.event ?? ''}</VisuallyHidden>
     </Box>
   );

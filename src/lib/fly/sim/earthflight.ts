@@ -31,6 +31,8 @@ export interface EarthState {
 	event: null | { kind: 'landed' | 'rough' | 'crash'; speed: number; time: number };
 	hover: number;
 	main: number;
+	/** Forward thrust, newtons, signed (negative while braking). */
+	mainSigned: number;
 }
 
 export interface TerrainQuery {
@@ -64,7 +66,7 @@ export function spawnOnGround(latDeg: number, lonDeg: number, headingDeg: number
 	const p = geodeticToEcef(lat, lon, groundHeight + FOOT_OFFSET.down);
 	const s: EarthState = {
 		pos: new THREE.Vector3(...p), vel: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(),
-		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0,
+		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0, mainSigned: 0,
 	};
 	setAttitude(s.q, lat, lon, rad(headingDeg), 0);
 	return s;
@@ -203,7 +205,7 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 
 	// propellant: ṁ = F/(Isp g0)
 	s.propellant = Math.max(0, s.propellant - ((Math.abs(hover) + Math.abs(main) + Math.abs(rcs) * 0.2) / (spec.isp * G0)) * dt);
-	s.hover = hover; s.main = Math.abs(main);
+	s.hover = hover; s.main = Math.abs(main); s.mainSigned = main;
 
 	contact(s, geo, ground, terrain, spec, dt, m, gLocal, hover);
 	s.time += dt;
@@ -255,6 +257,7 @@ function contact(s: EarthState, geo: Geo, ground: number, terrain: TerrainQuery,
 }
 
 export interface EarthTelemetry {
+	hoverN: number; mainN: number;
 	lat: number; lon: number; altitudeMsl: number; altitudeAgl: number;
 	speed: number; verticalSpeed: number; groundSpeed: number; heading: number; pitch: number;
 	mach: number; q: number; gForce: number; heatFlux: number; fuelFraction: number; mass: number; hover: number; main: number;
@@ -273,6 +276,7 @@ export function earthTelemetry(s: EarthState, terrain: TerrainQuery, spec: ShipS
 	const a = airAt(g.h);
 	const speed = s.vel.length();
 	return {
+		hoverN: s.hover, mainN: s.mainSigned,
 		lat: deg(g.lat), lon: deg(g.lon), altitudeMsl: g.h - foot, altitudeAgl: Math.max(0, g.h - foot - gnd),
 		speed, verticalSpeed: vz, groundSpeed: horiz.length(),
 		heading: ((deg(Math.atan2(fwd.dot(E), fwd.dot(N))) % 360) + 360) % 360,

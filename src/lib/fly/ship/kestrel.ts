@@ -3,17 +3,18 @@
 //
 // Design language (an ORIGINAL design inspired by the references Gee supplied, not a copy of any film craft):
 //   · a glass spherical cockpit with a gyroscope-style ring frame, two seats and a console, at the nose,
-//   · a Y-shaped fuselage tapering to a thin spine that ends in a side-facing ring rotor (it swings to face aft for cruise),
-//   · two big white spherical engine pods on the flanks with honeycomb intakes, star-shaped rear vents and short fins,
+//   · a Y-shaped fuselage tapering to a thin spine that ends in a fixed ring-duct stabiliser (it does not move),
+//   · two big white spherical engine pods on the flanks that pivot freely to aim their thrust (down to hover, aft to accelerate, forward to brake),
 //   · four jointed legs on a central ball joint, folding up in flight.
 // The layout follows the reference sheets Gee supplied (an Oblivion-style bubble craft); the geometry is built from scratch.
 // Coordinates: +X forward, +Y up, Z across the span; origin at the spine's mid-height under the engine pod. Metres.
 //
-// The builder returns a handle with animation setters (thrust, cruise tilt, gear, lights) and `update(dt)` for the spinning fan, plus
+// The builder returns a handle with animation setters (thrust, pod tilt, gear, lights) and `update(dt)` to ease the pods, plus
 // `stats()` so tests can hold it to its size and triangle budget (docs/fly/11-ship-roster.md §4).
 
 import * as THREE from 'three';
 import { loft, wingSlab, triangles, type Section } from './loft';
+import { slew, type PodTarget } from './pods';
 
 export interface KestrelOptions {
 	/** 'physical' uses a transmissive glass bubble (best looking); 'simple' uses cheap transparency for weak GPUs and tests. */
@@ -30,10 +31,10 @@ export interface KestrelStats { triangles: number; meshes: number; size: THREE.V
 
 export interface KestrelModel {
 	root: THREE.Group;
-	/** 0…1: lift ring glow and fan speed. */
+	/** 0…1: glow of both pods (the hangar slider); flight uses `setPods` for each side. */
 	setThrust(t: number): void;
-	/** 0 = turbine faces sideways (hover trim), 1 = faces aft (cruise thrust). */
-	setCruise(t: number): void;
+	/** Aim the two pods independently: tilt in radians (0 = exhaust down, + = aft, − = forward) and a 0…1 power for each. They ease toward the target. */
+	setPods(t: PodTarget): void;
 	/** 1 = legs deployed, 0 = folded. */
 	setGear(e: number): void;
 	setLights(on: boolean): void;
@@ -133,10 +134,12 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		return new THREE.CanvasTexture(c);
 	})();
 	if (curtainTex) own(curtainTex);
-	const curtainMat = own(new THREE.MeshBasicMaterial({ color: 0xbfe0ff, map: curtainTex ?? undefined, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
-	const lifts: { ring: THREE.Mesh; disc: THREE.Mesh; plume: THREE.Mesh }[] = [];
-	for (const side of [1, -1]) {
-		const pod = new THREE.Group(); pod.name = side === 1 ? 'engine-pod-r' : 'engine-pod-l'; pod.position.set(POD.x, POD.y, side * POD.z); root.add(pod);
+	const makeCurtain = () => own(new THREE.MeshBasicMaterial({ color: 0xbfe0ff, map: curtainTex ?? undefined, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+	const curtainMats = [makeCurtain(), makeCurtain()]; // [left, right]
+	const podGroups: THREE.Group[] = []; // [left, right]
+	const lifts: { plume: THREE.Mesh }[] = []; // [left, right]
+	for (const side of [-1, 1]) {
+		const pod = new THREE.Group(); pod.name = side === 1 ? 'engine-pod-r' : 'engine-pod-l'; podGroups.push(pod); pod.position.set(POD.x, POD.y, side * POD.z); root.add(pod);
 		const body = new THREE.Group(); body.rotation.z = -Math.PI / 2; pod.add(body); // the geometry's polar axis (+Y) now points forward (+X)
 		addMesh(body, new THREE.SphereGeometry(POD.r, seg, Math.round(seg * 0.6)), ceramic, 'engine-sphere');
 		addMesh(body, new THREE.SphereGeometry(POD.r * 1.006, seg, Math.round(seg * 0.35), 0, Math.PI * 2, Math.PI * 0.72, Math.PI * 0.28), graphite, 'pod-rear-cap'); // dark rear band
@@ -155,9 +158,10 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		// hover downwash: a wide blue-white curtain falling from the pod's belly
 		const lift = new THREE.Group(); lift.position.set(0, -POD.r * 0.55, 0); pod.add(lift);
 		const ring = addMesh(lift, new THREE.TorusGeometry(0.01, 0.005, 4, 8), graphite, 'lift-ring'); ring.castShadow = false; ring.visible = false;
+		const curtainMat = curtainMats[side === 1 ? 1 : 0];
 		const plume = new THREE.Group(); plume.name = 'lift-plume'; lift.add(plume);
 		for (const rot of [0, Math.PI / 2]) { const fan = new THREE.Mesh(own(new THREE.PlaneGeometry(rot === 0 ? 2.2 : 1.7, 2.8, 1, 1)), curtainMat); fan.position.y = -1.55; fan.rotation.y = rot; plume.add(fan); }
-		lifts.push({ ring, disc: ring, plume: plume as unknown as THREE.Mesh });
+		lifts.push({ plume: plume as unknown as THREE.Mesh });
 	}
 	// ---- fins: thin blades straight out of each pod's flank ------------------------------------------------------------------------------
 	for (const s of [1, -1]) {
@@ -200,15 +204,13 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const duct = addMesh(turbine, new THREE.CylinderGeometry(ringR, ringR, 0.36, seg * 2, 1, true), bandMat, 'turbine-shell'); duct.rotation.x = Math.PI / 2; // axis along the span: the ring faces left and right
 	for (const z of [0.18, -0.18]) { const lip = addMesh(turbine, new THREE.TorusGeometry(ringR, 0.04, 8, seg * 2), steel, 'turbine-lip'); lip.position.z = z; lip.castShadow = false; }
 	const inner = addMesh(turbine, new THREE.CylinderGeometry(ringR * 0.74, ringR * 0.74, 0.3, seg * 2, 1, true), graphite, 'turbine-inner'); inner.rotation.x = Math.PI / 2;
-	const fan = new THREE.Group(); fan.name = 'fan'; turbine.add(fan);
-	const bladeGeo = own(new THREE.BoxGeometry(ringR * 1.35, 0.07, 0.012));
-	for (let i = 0; i < 9; i++) { const b = new THREE.Mesh(bladeGeo, steel); b.rotation.z = (i / 9) * Math.PI; b.rotation.x = 0.35; b.castShadow = true; fan.add(b); }
-	const hub = addMesh(fan, new THREE.CylinderGeometry(0.3, 0.3, 0.1, 24), ceramic, 'fan-hub'); hub.rotation.x = Math.PI / 2;
+	// Fixed vanes inside the duct: this ring is only a stabiliser, it never spins or swings.
+	const vanes = new THREE.Group(); vanes.name = 'stabilizer-vanes'; turbine.add(vanes);
+	const vaneGeo = own(new THREE.BoxGeometry(ringR * 1.35, 0.07, 0.012));
+	for (let i = 0; i < 9; i++) { const b = new THREE.Mesh(vaneGeo, steel); b.rotation.z = (i / 9) * Math.PI; b.rotation.x = 0.35; b.castShadow = true; vanes.add(b); }
+	const hub = addMesh(vanes, new THREE.CylinderGeometry(0.3, 0.3, 0.1, 24), ceramic, 'stabilizer-hub'); hub.rotation.x = Math.PI / 2;
 	const spoke = addMesh(turbine, new THREE.BoxGeometry(ringR * 1.6, 0.04, 0.04), steel, 'turbine-spoke'); spoke.rotation.z = Math.PI / 2; spoke.castShadow = false; // the vertical bar through the hub
 	for (const s of [1, -1]) { const tab = addMesh(tail, new THREE.BoxGeometry(0.29, 0.55, 0.05), wingMat, 'tail-tab'); tab.position.set(0, s * (ringR + 0.12), 0); }
-	const rimGlow = addMesh(turbine, new THREE.TorusGeometry(ringR + 0.02, 0.012, 8, seg * 2), amberGlow, 'turbine-rim'); rimGlow.castShadow = false; rimGlow.position.z = 0.19;
-	const tailPlume = new THREE.Mesh(own(new THREE.ConeGeometry(ringR * 0.8, 2.6, seg, 1, true)), own(new THREE.MeshBasicMaterial({ color: AMBER, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })));
-	tailPlume.rotation.x = Math.PI / 2; tailPlume.position.z = -1.5; turbine.add(tailPlume);
 
 	// ---- landing gear: four long legs from one central ball under the fuselage; the feet stand ±2 m fore/aft and ±2.5 m out ----------
 	const ball = addMesh(root, new THREE.SphereGeometry(0.34, 24, 16), ceramic, 'gear-ball'); ball.position.set(0, -0.76, 0);
@@ -240,14 +242,17 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const lightStrip2 = lightStrip.clone(); lightStrip2.position.z = -0.19; lightsGroup.add(lightStrip2);
 
 	// ---- animation state ------------------------------------------------------------------------------
-	let thrust = 0, cruise = 0, gear = 1, fanAngle = 0;
+	let gear = 1;
+	const tilt = [0, 0], tiltTarget = [0, 0], power = [0, 0], powerTarget = [0, 0]; // [left, right]
 	const apply = () => {
-		curtainMat.opacity = 0.75 * thrust * (1 - 0.6 * cruise);
-		for (const l of lifts) l.plume.scale.set(1 + 0.25 * thrust, 0.35 + 0.65 * thrust, 1 + 0.25 * thrust);
+		for (let i = 0; i < 2; i++) {
+			podGroups[i].rotation.z = -tilt[i]; // positive tilt swings the exhaust (and the downwash curtain) aft
+			curtainMats[i].opacity = 0.75 * power[i];
+			lifts[i].plume.scale.set(1 + 0.25 * power[i], 0.35 + 0.65 * power[i], 1 + 0.25 * power[i]);
+		}
 		// the honeycomb intakes light up white-hot with thrust
-		const glow = 0.12 + 2.4 * thrust; grilleMat.color.setHex(thrust > 0.02 ? GRILLE_HEX : 0x2a2f36); if (thrust > 0.02) grilleMat.color.multiplyScalar(glow);
-		(tailPlume.material as THREE.MeshBasicMaterial).opacity = 0.4 * thrust * cruise;
-		turbine.rotation.y = (Math.PI / 2) * cruise; // 0: axis along Z (side-facing); 1: axis along X, plume aft
+		const t = (power[0] + power[1]) / 2;
+		const glow = 0.12 + 2.4 * t; grilleMat.color.setHex(t > 0.02 ? GRILLE_HEX : 0x2a2f36); if (t > 0.02) grilleMat.color.multiplyScalar(glow);
 		// Legs swing up and out of the way as `gear` goes 1 → 0.
 		legs.forEach((l) => l.hip.quaternion.setFromAxisAngle(l.axis, 1.25 * (1 - gear)));
 		legHolder.visible = gear > 0.02; // fully retracted: the legs are tucked away and not drawn
@@ -258,12 +263,16 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const shown = (o: THREE.Object3D) => { for (let n: THREE.Object3D | null = o; n; n = n.parent) if (!n.visible) return false; return true; };
 	return {
 		root,
-		setThrust(t) { thrust = Math.min(1, Math.max(0, t)); apply(); },
-		setCruise(t) { cruise = Math.min(1, Math.max(0, t)); apply(); },
+		setThrust(t) { const v = Math.min(1, Math.max(0, t)); powerTarget[0] = powerTarget[1] = power[0] = power[1] = v; apply(); },
+		setPods(t) { tiltTarget[0] = t.left; tiltTarget[1] = t.right; powerTarget[0] = Math.min(1, Math.max(0, t.thrustLeft)); powerTarget[1] = Math.min(1, Math.max(0, t.thrustRight)); },
 		setGear(e) { gear = Math.min(1, Math.max(0, e)); apply(); },
 		setLights(on) { lightsGroup.visible = on; },
 		setFirstPerson(on) { pilotParts.forEach((o) => { o.visible = !on; }); },
-		update(dt) { fanAngle += dt * (4 + 60 * thrust); fan.rotation.z = fanAngle; },
+		update(dt) {
+			// the pods slew toward their targets (about 3 rad/s) and the glow follows a little faster
+			for (let i = 0; i < 2; i++) { tilt[i] = slew(tilt[i], tiltTarget[i], 3.2, dt); power[i] = slew(power[i], powerTarget[i], 5, dt); }
+			apply();
+		},
 		stats() {
 			let tri = 0, meshes = 0; const mats = new Set<THREE.Material>();
 			root.traverse((o) => { if (!shown(o)) return; const m = o as THREE.Mesh; if (m.isMesh) { meshes++; tri += triangles(m.geometry); const mm = m.material; (Array.isArray(mm) ? mm : [mm]).forEach((x) => mats.add(x)); } });

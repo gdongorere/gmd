@@ -24,7 +24,7 @@ describe('Kestrel procedural model', () => {
 		const m = model();
 		const names = new Set<string>();
 		m.root.traverse((o) => names.add(o.name));
-		for (const n of ['canopy', 'frame-ring', 'engine-sphere', 'intake-grille', 'vent-star', 'gear-ball', 'spine', 'wing-r', 'wing-l', 'turbine-shell', 'fan', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'lift-plume', 'seat-base', 'screen']) expect(names.has(n), n).toBe(true);
+		for (const n of ['canopy', 'frame-ring', 'engine-sphere', 'intake-grille', 'vent-star', 'gear-ball', 'spine', 'wing-r', 'wing-l', 'turbine-shell', 'stabilizer-vanes', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'lift-plume', 'seat-base', 'screen']) expect(names.has(n), n).toBe(true);
 		m.dispose();
 	});
 	it('folding the gear raises the feet (the model gets shorter)', () => {
@@ -45,13 +45,6 @@ describe('Kestrel procedural model', () => {
 		m.setGear(1); expect(gear.visible).toBe(true);
 		m.dispose();
 	});
-	it('cruise swings the turbine from sideways to aft', () => {
-		const m = model();
-		const t = m.root.getObjectByName('turbine')!;
-		m.setCruise(0); expect(t.rotation.y).toBeCloseTo(0, 6);
-		m.setCruise(1); expect(t.rotation.y).toBeCloseTo(Math.PI / 2, 6);
-		m.dispose();
-	});
 	it('thrust lights the downwash curtain and the honeycomb intakes, and clamps its input', () => {
 		const m = model();
 		const curtain = (m.root.getObjectByName('lift-plume') as unknown as { children: { material: { opacity: number } }[] }).children[0].material;
@@ -61,12 +54,32 @@ describe('Kestrel procedural model', () => {
 		m.setThrust(-3); expect(curtain.opacity).toBe(0);
 		m.dispose();
 	});
-	it('the fan spins faster with thrust', () => {
+	it('each pod pivots on its own: braking and accelerating swing them opposite ways, yaw tilts them oppositely', () => {
 		const m = model();
-		const fan = m.root.getObjectByName('fan')!;
-		m.setThrust(0); m.update(1); const slow = fan.rotation.z;
-		m.setThrust(1); m.update(1); const fast = fan.rotation.z - slow;
-		expect(fast).toBeGreaterThan(slow * 5);
+		const l = m.root.getObjectByName('engine-pod-l')!, r = m.root.getObjectByName('engine-pod-r')!;
+		expect(l.rotation.z).toBeCloseTo(0, 9); expect(r.rotation.z).toBeCloseTo(0, 9);
+		m.setPods({ left: 0.8, right: 0.8, thrustLeft: 1, thrustRight: 1 }); for (let i = 0; i < 60; i++) m.update(1 / 30);
+		expect(l.rotation.z).toBeCloseTo(-0.8, 5); expect(r.rotation.z).toBeCloseTo(-0.8, 5); // exhaust aft: accelerating
+		m.setPods({ left: -0.5, right: -0.5, thrustLeft: 1, thrustRight: 1 }); for (let i = 0; i < 60; i++) m.update(1 / 30);
+		expect(l.rotation.z).toBeCloseTo(0.5, 5); // exhaust forward: braking
+		m.setPods({ left: 0.4, right: -0.4, thrustLeft: 1, thrustRight: 1 }); for (let i = 0; i < 60; i++) m.update(1 / 30);
+		expect(l.rotation.z).toBeCloseTo(-0.4, 5); expect(r.rotation.z).toBeCloseTo(0.4, 5);
+		m.dispose();
+	});
+	it('pods slew at a limited rate (they do not snap) and glow follows power per pod', () => {
+		const m = model();
+		const l = m.root.getObjectByName('engine-pod-l')!;
+		m.setPods({ left: 1.5, right: 0, thrustLeft: 1, thrustRight: 0.2 }); m.update(0.1);
+		expect(Math.abs(l.rotation.z)).toBeLessThan(0.4); expect(Math.abs(l.rotation.z)).toBeGreaterThan(0.2);
+		for (let i = 0; i < 60; i++) m.update(1 / 30);
+		m.dispose();
+	});
+	it('the tail ring is a fixed stabiliser: it never rotates or swings', () => {
+		const m = model();
+		const t = m.root.getObjectByName('turbine')!, v = m.root.getObjectByName('stabilizer-vanes')!;
+		const before = [t.rotation.y, v.rotation.z];
+		m.setThrust(1); m.setPods({ left: 1, right: 1, thrustLeft: 1, thrustRight: 1 }); for (let i = 0; i < 90; i++) m.update(1 / 30);
+		expect([t.rotation.y, v.rotation.z]).toEqual(before);
 		m.dispose();
 	});
 });
