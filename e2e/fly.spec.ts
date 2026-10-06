@@ -33,3 +33,49 @@ test.describe('/fly hangar: the Kestrel', () => {
     expect((await download).suggestedFilename()).toBe('kestrel.png');
   });
 });
+
+test.describe('/fly arena: first and third person', () => {
+  const key = async (page: import('@playwright/test').Page, k: string, ms: number) => { await page.keyboard.down(k); await page.waitForTimeout(ms); await page.keyboard.up(k); };
+
+  test('Take it flying opens the arena in third person with the controls and HUD', async ({ page }) => {
+    await page.goto('/fly');
+    await page.getByTestId('fly-button').click({ timeout: 60_000 });
+    await expect(page.getByTestId('arena')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Third person' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('arena-help')).toContainText('Space / Shift');
+    await expect(page.getByTestId('arena-hud')).toContainText('SPD');
+    await expect(page.getByTestId('arena-canvas').locator('canvas')).toBeVisible({ timeout: 30_000 });
+  });
+
+  test('V and the buttons switch between first and third person', async ({ page }) => {
+    await page.goto('/fly?mode=arena');
+    await expect(page.getByTestId('arena-canvas').locator('canvas')).toBeVisible({ timeout: 60_000 });
+    await page.keyboard.press('v');
+    await expect(page.getByRole('button', { name: 'First person' })).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('v');
+    await expect(page.getByRole('button', { name: 'Third person' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'First person' }).click();
+    await expect(page.getByRole('button', { name: 'First person' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('holding Space lifts the ship off the pad and the HUD altitude rises; R resets', async ({ page }) => {
+    await page.goto('/fly?mode=arena');
+    await expect(page.getByTestId('arena-canvas').locator('canvas')).toBeVisible({ timeout: 60_000 });
+    await page.waitForTimeout(1500);
+    await expect(page.getByTestId('hud-alt')).toHaveText('0.0');
+    await key(page, ' ', 4000);
+    const alt = Number(await page.getByTestId('hud-alt').innerText());
+    expect(alt).toBeGreaterThan(1);
+    await page.keyboard.press('r');
+    await expect(page.getByTestId('hud-alt')).toHaveText('0.0', { timeout: 10_000 });
+  });
+
+  test('the interface can be hidden with I', async ({ page }) => {
+    await page.goto('/fly?mode=arena');
+    await expect(page.getByTestId('arena-canvas').locator('canvas')).toBeVisible({ timeout: 60_000 });
+    await page.keyboard.press('i');
+    await expect(page.getByTestId('arena-hud')).toBeHidden();
+    await page.keyboard.press('i');
+    await expect(page.getByTestId('arena-hud')).toBeVisible();
+  });
+});

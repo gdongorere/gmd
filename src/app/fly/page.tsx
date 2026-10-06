@@ -1,6 +1,6 @@
 // src/app/fly/page.tsx
 import type { Metadata } from 'next';
-import Hangar from '@/components/fly/Hangar';
+import FlyApp from '@/components/fly/FlyApp';
 
 export const metadata: Metadata = {
   title: 'Fly: the Kestrel',
@@ -10,5 +10,5 @@ export const metadata: Metadata = {
 };
 
 export default function FlyPage() {
-  return <Hangar />;
+  return <FlyApp />;
 }

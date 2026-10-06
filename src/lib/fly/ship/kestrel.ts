@@ -34,6 +34,8 @@ export interface KestrelModel {
 	/** 1 = legs deployed, 0 = folded. */
 	setGear(e: number): void;
 	setLights(on: boolean): void;
+	/** Hide the pilot's own body and head so they don't block the first-person view. */
+	setFirstPerson(on: boolean): void;
 	update(dt: number): void;
 	stats(): KestrelStats;
 	dispose(): void;
@@ -110,7 +112,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const cockpit = new THREE.Group(); cockpit.name = 'cockpit'; cockpit.position.set(3.4, 0.45, 0); root.add(cockpit);
 	const R = 1.35;
 	addMesh(cockpit, new THREE.SphereGeometry(R, seg, Math.round(seg * 0.6)), glass, 'canopy');
-	const tube = 0.045;
+	const tube = 0.032;
 	const frame = new THREE.Group(); frame.name = 'frame'; cockpit.add(frame);
 	const ringAt = (rx: number, ry: number, rz: number) => { const r = addMesh(frame, new THREE.TorusGeometry(R * 1.003, tube, 8, seg * 2), graphite, 'frame-ring'); r.rotation.set(rx, ry, rz); r.castShadow = false; return r; };
 	ringAt(Math.PI / 2, 0, 0); // equator
@@ -121,12 +123,14 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	addMesh(cockpit, new THREE.CylinderGeometry(0.5, 0.7, 0.55, 20), graphite, 'cradle').position.set(-0.55, -0.95, 0);
 	const strut = addMesh(cockpit, new THREE.BoxGeometry(1.6, 0.22, 0.36), graphite, 'cradle-beam'); strut.position.set(-1.1, -0.55, 0);
 	// interior: two seats, a console with glowing screens, two crew silhouettes
+	const pilotParts: THREE.Object3D[] = [];
 	const seat = (z: number) => {
 		const s = new THREE.Group(); s.position.set(-0.15, -0.6, z);
 		addMesh(s, new THREE.BoxGeometry(0.55, 0.12, 0.5), graphite, 'seat-base');
 		const back = addMesh(s, new THREE.BoxGeometry(0.12, 0.7, 0.5), graphite, 'seat-back'); back.position.set(-0.25, 0.35, 0); back.rotation.z = -0.15;
 		const body = addMesh(s, new THREE.CapsuleGeometry(0.17, 0.4, 4, 10), own(new THREE.MeshStandardMaterial({ color: 0x3a4658, roughness: 0.9 })), 'crew-body'); body.position.set(0.0, 0.42, 0);
 		const head = addMesh(s, new THREE.SphereGeometry(0.15, 14, 10), own(new THREE.MeshStandardMaterial({ color: 0x4b566a, roughness: 0.6 })), 'crew-head'); head.position.set(0.02, 0.88, 0);
+		if (z > 0) pilotParts.push(body, head); // the left seat is the pilot's (first-person eye position)
 		cockpit.add(s);
 	};
 	seat(0.42); seat(-0.42);
@@ -206,6 +210,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		setCruise(t) { cruise = Math.min(1, Math.max(0, t)); apply(); },
 		setGear(e) { gear = Math.min(1, Math.max(0, e)); apply(); },
 		setLights(on) { lightsGroup.visible = on; },
+		setFirstPerson(on) { pilotParts.forEach((o) => { o.visible = !on; }); },
 		update(dt) { fanAngle += dt * (4 + 60 * thrust); fan.rotation.z = fanAngle; },
 		stats() {
 			let tri = 0, meshes = 0; const mats = new Set<THREE.Material>();

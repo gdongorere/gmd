@@ -18,7 +18,7 @@ const VIEWS: Record<View, { pos: [number, number, number]; target: [number, numb
 };
 const VIEW_LABEL: Record<View, string> = { 'three-quarter': '3/4', side: 'Side', top: 'Top', front: 'Front', cockpit: 'Cockpit' };
 
-export default function Hangar() {
+export default function Hangar({ onFly }: { onFly?: () => void } = {}) {
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<{ model: KestrelModel | null; setView: (v: View) => void; capture: () => Promise<Blob | null> } | null>(null);
   const [thrust, setThrust] = useState(0);
@@ -177,6 +177,7 @@ export default function Hangar() {
         <Flex {...glass} px={2} py={1} gap={1} wrap="wrap" justify="center" pointerEvents="auto" role="group" aria-label="Camera views">
           {(Object.keys(VIEWS) as View[]).map((v) => <Button key={v} size="xs" variant={view === v ? 'solid' : 'ghost'} aria-pressed={view === v} onClick={() => pickView(v)}>{VIEW_LABEL[v]}</Button>)}
           <Button size="xs" variant="ghost" leftIcon={<FiCamera aria-hidden="true" />} onClick={save}>Save image</Button>
+          {onFly && <Button size="xs" variant="solid" colorScheme="orange" onClick={onFly} data-testid="fly-button">Take it flying</Button>}
         </Flex>
       </Flex>
       <VisuallyHidden role="status" aria-live="polite">{ready ? 'Hangar ready' : ''}</VisuallyHidden>
