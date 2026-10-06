@@ -9,6 +9,8 @@ export const EARTH_RADIUS_AU = 6371 / KM_PER_AU;
 export interface LadderStop {
 	id: 'system' | 'inner' | 'earth-moon' | 'earth';
 	label: string;
+	/** Compact label for narrow screens. */
+	short: string;
 	/** Body the camera looks at. */
 	focus: 'Sun' | 'Earth';
 	/** Camera distance from the focus, AU. */
@@ -19,13 +21,13 @@ export interface LadderStop {
 }
 
 export const LADDER: LadderStop[] = [
-	{ id: 'system', label: 'Solar System', focus: 'Sun', distanceAu: 45, hint: 'All eight planets, out to Neptune at 30 AU',
+	{ id: 'system', label: 'Solar System', short: 'System', focus: 'Sun', distanceAu: 45, hint: 'All eight planets, out to Neptune at 30 AU',
 		caption: () => 'The Solar System: eight planets, and light takes over four hours to reach Neptune.' },
-	{ id: 'inner', label: 'Inner planets', focus: 'Sun', distanceAu: 3.6, hint: 'Mercury to Mars, where the rocky worlds live',
+	{ id: 'inner', label: 'Inner planets', short: 'Inner', focus: 'Sun', distanceAu: 3.6, hint: 'Mercury to Mars, where the rocky worlds live',
 		caption: () => 'The inner planets. Earth is 1 AU from the Sun: light covers it in 8 minutes 20 seconds.' },
-	{ id: 'earth-moon', label: 'Earth–Moon', focus: 'Earth', distanceAu: 0.0046, hint: 'The Moon, 384,400 km away on average',
+	{ id: 'earth-moon', label: 'Earth–Moon', short: 'Moon', focus: 'Earth', distanceAu: 0.0046, hint: 'The Moon, 384,400 km away on average',
 		caption: () => 'Earth and the Moon, about 384,400 km apart: light takes 1.3 seconds to cross.' },
-	{ id: 'earth', label: 'Earth', focus: 'Earth', distanceAu: (6371 + 1400) / KM_PER_AU, hint: 'Down to a low orbit above the day–night line',
+	{ id: 'earth', label: 'Earth', short: 'Earth', focus: 'Earth', distanceAu: (6371 + 1400) / KM_PER_AU, hint: 'Down to a low orbit above the day–night line',
 		caption: () => 'Earth, from about 1,400 km up. The day–night line is where it is right now.' },
 ];
 

@@ -113,12 +113,12 @@ test.describe('Time machine', () => {
   test('the scale ladder jumps between stops and the scale rule is always stated', async ({ page }) => {
     await open(page);
     await page.keyboard.press('o');
-    await expect(page.getByTestId('scale-badge')).toContainText('Visible scale');
+    await expect(page.getByTestId('scale-badge')).toContainText('True scale');
     await page.getByRole('group', { name: 'Scale ladder' }).getByRole('button', { name: 'Inner planets', exact: true }).click();
     await expect(page.getByTestId('system3d-readout')).toContainText(/3\.60 AU/, { timeout: 30_000 });
-    await page.getByRole('button', { name: 'View' }).click();
+    await page.getByTestId('system3d-root').getByRole('button', { name: 'View', exact: true }).click();
     await page.getByText('True scale', { exact: true }).click();
-    await expect(page.getByTestId('scale-badge')).toContainText('True scale');
+    await expect(page.getByTestId('scale-badge')).toContainText('Visible scale');
   });
 
   test('keyboard shortcuts change speed and return to the present', async ({ page }) => {
@@ -207,5 +207,15 @@ test.describe('Time machine', () => {
     await page.getByTestId('hud-toggle').click();
     await expect(ladder).toBeVisible();
     await expect(page.getByRole('group', { name: 'Date and time' })).toBeVisible();
+  });
+
+  test('Save image over the Solar System saves the 3D scene, not the galaxy', async ({ page }) => {
+    await open(page);
+    await page.keyboard.press('o');
+    await expect(page.getByTestId('system3d')).toBeVisible();
+    await page.waitForTimeout(3000);
+    const download = page.waitForEvent('download', { timeout: 30_000 });
+    await page.getByRole('button', { name: 'Save image' }).click();
+    expect((await download).suggestedFilename()).toBe('solar-system.png');
   });
 });
