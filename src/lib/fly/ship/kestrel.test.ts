@@ -24,7 +24,7 @@ describe('Kestrel procedural model', () => {
 		const m = model();
 		const names = new Set<string>();
 		m.root.traverse((o) => names.add(o.name));
-		for (const n of ['canopy', 'frame-ring', 'engine-sphere', 'intake-grille', 'vent-star', 'gear-ball', 'spine', 'wing-r', 'wing-l', 'turbine-shell', 'fan', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'lift-ring', 'seat-base', 'screen']) expect(names.has(n), n).toBe(true);
+		for (const n of ['canopy', 'frame-ring', 'engine-sphere', 'intake-grille', 'vent-star', 'gear-ball', 'spine', 'wing-r', 'wing-l', 'turbine-shell', 'fan', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'lift-plume', 'seat-base', 'screen']) expect(names.has(n), n).toBe(true);
 		m.dispose();
 	});
 	it('folding the gear raises the feet (the model gets shorter)', () => {
@@ -43,12 +43,13 @@ describe('Kestrel procedural model', () => {
 		m.setCruise(1); expect(t.rotation.y).toBeCloseTo(Math.PI / 2, 6);
 		m.dispose();
 	});
-	it('thrust lights the lift plume and clamps its input', () => {
+	it('thrust lights the downwash curtain and the honeycomb intakes, and clamps its input', () => {
 		const m = model();
-		const plume = m.root.getObjectByName('lift-ring')!.parent!.children.find((c) => (c as { geometry?: { type: string } }).geometry?.type === 'ConeGeometry') as unknown as { material: { opacity: number } };
-		m.setThrust(0); expect(plume.material.opacity).toBe(0);
-		m.setThrust(5); expect(plume.material.opacity).toBeGreaterThan(0.2);
-		m.setThrust(-3); expect(plume.material.opacity).toBe(0);
+		const curtain = (m.root.getObjectByName('lift-plume') as unknown as { children: { material: { opacity: number } }[] }).children[0].material;
+		const grille = (m.root.getObjectByName('intake-grille') as unknown as { material: { color: { r: number } } }).material;
+		m.setThrust(0); expect(curtain.opacity).toBe(0); const dim = grille.color.r;
+		m.setThrust(5); expect(curtain.opacity).toBeGreaterThan(0.5); expect(grille.color.r).toBeGreaterThan(dim * 10);
+		m.setThrust(-3); expect(curtain.opacity).toBe(0);
 		m.dispose();
 	});
 	it('the fan spins faster with thrust', () => {

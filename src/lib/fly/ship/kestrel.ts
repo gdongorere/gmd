@@ -81,7 +81,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		? own(new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.16, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false }))
 		: own(new THREE.MeshPhysicalMaterial({ color: 0xd8f0ff, roughness: 0.02, metalness: 0, transmission: 0.95, thickness: 0.05, ior: 1.45, transparent: true, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false }));
 	const lightMat = (c: number) => own(new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
-	const amberGlow = lightMat(AMBER), cyanGlow = lightMat(CYAN), screenMat = lightMat(0x2fb6e8);
+	const amberGlow = lightMat(AMBER), screenMat = lightMat(0x2fb6e8);
 	const addMesh = (parent: THREE.Object3D, g: THREE.BufferGeometry, m: THREE.Material, name: string) => { own(g); const mesh = new THREE.Mesh(g, m); mesh.name = name; mesh.castShadow = true; mesh.receiveShadow = true; parent.add(mesh); return mesh; };
 
 	// ---- fuselage: a Y-shaped wedge, wide at the cockpit and tapering to a thin spine toward the tail ring ---------------
@@ -96,20 +96,35 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 
 	// ---- engine pods: two big white spheres on the flanks, honeycomb intake ahead, star vent aft ------------------------
 	const POD = { x: 1.55, z: 2.25, r: 0.88 };
+	// Honeycomb intake panel: a dark disc with a rounded panel of hexagonal holes that glows white-hot with thrust (reference frames).
 	const honey = (() => {
-		if (!tex) return null;
+		if (typeof document === 'undefined' || opts.textures === false) return null;
 		const c = document.createElement('canvas'); c.width = 256; c.height = 256;
 		const g = c.getContext('2d'); if (!g) return null;
-		g.fillStyle = '#15171b'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#5b6068';
-		for (let row = -8; row <= 8; row++) for (let col = -8; col <= 8; col++) { const x = 128 + col * 14 + (row & 1 ? 7 : 0), y = 128 + row * 12; if (Math.hypot(x - 128, y - 128) < 108) { g.beginPath(); g.arc(x, y, 4.3, 0, 7); g.fill(); } }
+		g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.fillStyle = '#fff';
+		for (let row = -9; row <= 9; row++) for (let col = -9; col <= 9; col++) {
+			const x = 128 + col * 13 + (row & 1 ? 6.5 : 0), y = 128 + row * 11.3;
+			if (Math.abs(x - 128) < 100 && Math.abs(y - 128) < 82) { g.beginPath(); for (let k = 0; k < 6; k++) { const a = (k / 6) * Math.PI * 2 + Math.PI / 6; g.lineTo(x + Math.cos(a) * 5.4, y + Math.sin(a) * 5.4); } g.closePath(); g.fill(); }
+		}
 		const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 	})();
 	if (honey) own(honey);
-	const intakeMat = own(new THREE.MeshStandardMaterial({ color: 0xffffff, map: honey ?? undefined, roughness: 0.6, metalness: 0.4 }));
-	if (!honey) intakeMat.color.setHex(GRAPHITE);
+	const grilleMat = own(new THREE.MeshBasicMaterial({ color: 0x2a2f36, map: honey ?? undefined, toneMapped: false }));
+	const GRILLE_HEX = 0xcfe6ff;
 	const star = new THREE.Shape();
 	for (let i = 0; i < 12; i++) { const rr = i % 2 === 0 ? 0.5 : 0.27, a = (i / 12) * Math.PI * 2; (i === 0 ? star.moveTo : star.lineTo).call(star, Math.cos(a) * rr, Math.sin(a) * rr); }
 	star.closePath();
+	const curtainTex = (() => {
+		if (typeof document === 'undefined') return null;
+		const c = document.createElement('canvas'); c.width = 64; c.height = 256; const g = c.getContext('2d'); if (!g) return null;
+		const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, 'rgba(235,248,255,1)'); gr.addColorStop(0.35, 'rgba(150,200,255,0.7)'); gr.addColorStop(1, 'rgba(110,170,255,0)');
+		g.fillStyle = gr; g.fillRect(0, 0, 64, 256);
+		const gx = g.createLinearGradient(0, 0, 64, 0); gx.addColorStop(0, 'rgba(0,0,0,1)'); gx.addColorStop(0.25, 'rgba(0,0,0,0)'); gx.addColorStop(0.75, 'rgba(0,0,0,0)'); gx.addColorStop(1, 'rgba(0,0,0,1)');
+		g.globalCompositeOperation = 'destination-out'; g.fillStyle = gx; g.fillRect(0, 0, 64, 256); // soft vertical edges
+		return new THREE.CanvasTexture(c);
+	})();
+	if (curtainTex) own(curtainTex);
+	const curtainMat = own(new THREE.MeshBasicMaterial({ color: 0xbfe0ff, map: curtainTex ?? undefined, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
 	const lifts: { ring: THREE.Mesh; disc: THREE.Mesh; plume: THREE.Mesh }[] = [];
 	for (const side of [1, -1]) {
 		const pod = new THREE.Group(); pod.name = side === 1 ? 'engine-pod-r' : 'engine-pod-l'; pod.position.set(POD.x, -0.05, side * POD.z); root.add(pod);
@@ -120,20 +135,23 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		// honeycomb intake on the front pole
 		const intake = new THREE.Group(); intake.position.set(POD.r * 0.9, 0, 0); intake.rotation.y = Math.PI / 2; pod.add(intake);
 		addMesh(intake, new THREE.TorusGeometry(0.5, 0.06, 10, seg), graphite, 'intake-ring');
-		addMesh(intake, new THREE.CircleGeometry(0.47, seg), intakeMat, 'intake-grille').position.z = 0.02;
+		addMesh(intake, new THREE.CircleGeometry(0.47, seg), graphite, 'intake-bowl').position.z = 0.015;
+		const panel = addMesh(intake, new THREE.PlaneGeometry(0.8, 0.64), grilleMat, 'intake-grille'); panel.position.z = 0.03; panel.castShadow = false;
 		// six-pointed star vent on the rear pole
 		const vent = new THREE.Group(); vent.position.set(-POD.r * 0.9, 0, 0); vent.rotation.y = -Math.PI / 2; pod.add(vent);
 		addMesh(vent, new THREE.CircleGeometry(0.58, seg), steel, 'vent-bowl').position.z = -0.01;
 		addMesh(vent, new THREE.ShapeGeometry(star), graphite, 'vent-star').position.z = 0.012;
 		// strut tying the pod to the fuselage
 		const strut = addMesh(root, new THREE.CylinderGeometry(0.13, 0.17, POD.z - 0.65, 12), ceramic, 'pod-strut'); strut.rotation.x = Math.PI / 2; strut.position.set(POD.x, 0.0, side * (0.65 + (POD.z - 0.65) / 2));
-		// hover plume beneath the pod
-		const lift = new THREE.Group(); lift.position.set(0, -POD.r - 0.02, 0); pod.add(lift);
-		const ring = addMesh(lift, new THREE.TorusGeometry(0.46, 0.04, 10, seg), amberGlow, 'lift-ring'); ring.rotation.x = Math.PI / 2; ring.castShadow = false;
-		const disc = addMesh(lift, new THREE.CircleGeometry(0.42, seg), cyanGlow, 'lift-disc'); disc.rotation.x = Math.PI / 2; disc.position.y = -0.03; disc.castShadow = false;
-		const plume = new THREE.Mesh(own(new THREE.ConeGeometry(0.42, 2.0, seg, 1, true)), own(new THREE.MeshBasicMaterial({ color: CYAN, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false })));
-		plume.position.y = -1.0; lift.add(plume);
-		lifts.push({ ring, disc, plume });
+		// hover downwash: a wide blue-white curtain falling from the pod's belly (two crossed fans), as in the reference frames
+		const lift = new THREE.Group(); lift.position.set(0, -POD.r * 0.55, 0); pod.add(lift);
+		const ring = addMesh(lift, new THREE.TorusGeometry(0.01, 0.005, 4, 8), graphite, 'lift-ring'); ring.castShadow = false; ring.visible = false; // anchor kept for the animation API
+		const disc = ring;
+		const plume = new THREE.Group(); plume.name = 'lift-plume'; lift.add(plume);
+		for (const rot of [0, Math.PI / 2]) {
+			const fan = new THREE.Mesh(own(new THREE.PlaneGeometry(rot === 0 ? 2.2 : 1.7, 2.8, 1, 1)), curtainMat); fan.position.y = -1.3 - 0.25; fan.rotation.y = rot; plume.add(fan);
+		}
+		lifts.push({ ring, disc, plume: plume as unknown as THREE.Mesh });
 	}
 	// ---- fins: short tapered blades out of each pod's flank (the small wings of the reference) -------------------------------
 	for (const s of [1, -1]) {
@@ -214,11 +232,10 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	// ---- animation state ------------------------------------------------------------------------------
 	let thrust = 0, cruise = 0, gear = 1, fanAngle = 0;
 	const apply = () => {
-		for (const l of lifts) {
-			(l.plume.material as THREE.MeshBasicMaterial).opacity = 0.35 * thrust * (1 - 0.7 * cruise);
-			l.plume.scale.y = 0.4 + 0.6 * thrust;
-			(l.disc.material as THREE.MeshBasicMaterial).color.setHex(thrust > 0.02 ? CYAN : 0x335566);
-		}
+		curtainMat.opacity = 0.75 * thrust * (1 - 0.6 * cruise);
+		for (const l of lifts) l.plume.scale.set(1 + 0.25 * thrust, 0.35 + 0.65 * thrust, 1 + 0.25 * thrust);
+		// the honeycomb intakes light up white-hot with thrust
+		const glow = 0.12 + 2.4 * thrust; grilleMat.color.setHex(thrust > 0.02 ? GRILLE_HEX : 0x2a2f36); if (thrust > 0.02) grilleMat.color.multiplyScalar(glow);
 		(tailPlume.material as THREE.MeshBasicMaterial).opacity = 0.4 * thrust * cruise;
 		turbine.rotation.y = (Math.PI / 2) * cruise; // 0: axis along Z (side-facing); 1: axis along X, plume aft
 		// Legs fold up and inwards as `gear` goes 1 → 0.

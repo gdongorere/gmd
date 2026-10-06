@@ -81,6 +81,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         ]);
         const { loadTerrariumTile } = await import('@/lib/fly/earth/terrarium');
         const { LocalFrame } = await import('@/lib/fly/earth/frame');
+        const { Dust } = await import('@/lib/fly/earth/dust');
         void atmo; void flight;
         if (disposed) return;
 
@@ -118,6 +119,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         const buildings = new bl.BuildingsLayer({ fetchJson: bl.overpassFetch as never }, manager.tracker, (la, lo) => manager.field.height(lo, la));
         scene.add(buildings.root);
 
+        const dust = new Dust(); scene.add(dust.points);
         const model = buildKestrel({ glass: soft ? 'simple' : 'physical', detail: soft ? 32 : 56 });
         model.root.traverse((o) => { if ((o as import('three').Mesh).isMesh) (o as import('three').Mesh).castShadow = true; });
         scene.add(model.root);
@@ -228,6 +230,10 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           model.setThrust(Math.max(tel.hover, tel.main));
           model.setCruise(Math.min(1, tel.main * 3));
           model.update(dt);
+          {
+            const groundY = shipLocal.y - tel.altitudeAgl - (state.gear ? 2.03 : 1.3);
+            dust.update(dt, shipLocal, qLocal, groundY, Math.max(tel.hover, tel.main * 0.5), tel.altitudeAgl, tel.altitudeMsl - tel.altitudeAgl <= 1, Math.min(1, 0.25 + 0.75 * Math.max(0, Math.sin((lit.sunElevation * Math.PI) / 180))));
+          }
           if (f.view !== lastView) { rig.setMode(f.view); lastView = f.view; model.setFirstPerson(f.view === 'first'); }
           rig.update(dt, shipLocal, qLocal, velLocal);
           camera.position.copy(rig.pose.pos); camera.quaternion.copy(rig.pose.quat);
@@ -283,7 +289,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         cleanup = () => {
           cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
           actions.current = null; delete (window as unknown as { __earth?: unknown }).__earth;
-          model.dispose(); buildings.dispose(); manager.dispose(); sky.dispose(); renderer.dispose(); canvas.remove();
+          model.dispose(); dust.dispose(); buildings.dispose(); manager.dispose(); sky.dispose(); renderer.dispose(); canvas.remove();
         };
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Earth could not start on this device.');
