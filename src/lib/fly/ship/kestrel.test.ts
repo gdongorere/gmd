@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { buildKestrel } from './kestrel';
 import { KESTREL } from '../ships/specs';
@@ -52,6 +53,15 @@ describe('Kestrel procedural model', () => {
 		m.setThrust(0); expect(curtain.opacity).toBe(0); const dim = grille.color.r;
 		m.setThrust(5); expect(curtain.opacity).toBeGreaterThan(0.5); expect(grille.color.r).toBeGreaterThan(dim * 10);
 		m.setThrust(-3); expect(curtain.opacity).toBe(0);
+		m.dispose();
+	});
+	it('at rest the thruster faces point straight down (not forward)', () => {
+		const m = model(); m.root.updateMatrixWorld(true);
+		for (const side of ['l', 'r']) {
+			const g = m.root.getObjectByName(`engine-pod-${side}`)!.getObjectByName('intake-grille')!;
+			const normal = new THREE.Vector3(0, 0, 1).transformDirection(g.matrixWorld); // a circle geometry faces +Z locally
+			expect(normal.y).toBeLessThan(-0.99); expect(Math.abs(normal.x)).toBeLessThan(0.01);
+		}
 		m.dispose();
 	});
 	it('each pod pivots on its own: braking and accelerating swing them opposite ways, yaw tilts them oppositely', () => {
