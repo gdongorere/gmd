@@ -19,7 +19,7 @@ const VIEWS: Record<View, { pos: [number, number, number]; target: [number, numb
 };
 const VIEW_LABEL: Record<View, string> = { 'three-quarter': '3/4', side: 'Side', top: 'Top', front: 'Front', cockpit: 'Cockpit' };
 
-export default function Hangar({ onFly }: { onFly?: () => void } = {}) {
+export default function Hangar({ onFly, onEarth }: { onFly?: () => void; onEarth?: () => void } = {}) {
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<{ model: KestrelModel | null; setView: (v: View) => void; capture: () => Promise<Blob | null> } | null>(null);
   const [thrust, setThrust] = useState(0);
@@ -153,7 +153,7 @@ export default function Hangar({ onFly }: { onFly?: () => void } = {}) {
             <Text>Δv {dv.toFixed(1)} km/s</Text>
             <Text>TWR {thrustToWeight(KESTREL, 9.81).toFixed(1)} Earth · {thrustToWeight(KESTREL, 3.71).toFixed(1)} Mars</Text>
           </Flex>
-          <Text fontSize="2xs" color="content.muted" mt={1}>An original design inspired by dragonfly-like VTOL craft. Vehicle numbers are gameplay values; the drive is fictional (Isp {KESTREL.isp} s, g₀ {G0} m/s²).</Text>
+          <Text fontSize="2xs" color="content.muted" mt={1}>An original bubble-canopy VTOL, laid out after the Oblivion-style reference sheets: glass cockpit, two spherical engine pods, ring-rotor tail. Vehicle numbers are gameplay values; the drive is fictional (Isp {KESTREL.isp} s, g₀ {G0} m/s²).</Text>
         </Box>
       </Box>
 
@@ -180,6 +180,7 @@ export default function Hangar({ onFly }: { onFly?: () => void } = {}) {
           {(Object.keys(VIEWS) as View[]).map((v) => <Button key={v} size="xs" variant={view === v ? 'solid' : 'ghost'} aria-pressed={view === v} onClick={() => pickView(v)}>{VIEW_LABEL[v]}</Button>)}
           <Button size="xs" variant="ghost" leftIcon={<FiCamera aria-hidden="true" />} onClick={save}>Save image</Button>
           {onFly && <Button size="xs" variant="solid" colorScheme="orange" onClick={onFly} data-testid="fly-button">Take it flying</Button>}
+          {onEarth && <Button size="xs" variant="solid" colorScheme="blue" onClick={onEarth} data-testid="earth-button">Fly over Earth</Button>}
         </Flex>
       </Flex>
       <VisuallyHidden role="status" aria-live="polite">{ready ? 'Hangar ready' : ''}</VisuallyHidden>

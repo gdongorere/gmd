@@ -47,3 +47,10 @@ export function ancestors(id: TileId): TileId[] {
 	for (let p = parentOf(id); p; p = parentOf(p)) out.push(p);
 	return out;
 }
+
+/** The ancestor of `id` at zoom `z` (or `id` itself when it is already that coarse). */
+export function ancestorAt(id: TileId, z: number): TileId {
+	if (id.z <= z) return id;
+	const k = id.z - z;
+	return { z, x: id.x >> k, y: id.y >> k };
+}

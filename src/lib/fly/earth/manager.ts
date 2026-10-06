@@ -204,7 +204,7 @@ export class EarthManager {
 			this.tracker.track(geom, 'earth', 'geometry', geometryBytes(g.positions.length / 3, g.indices.length, 11), 'tiles');
 			r.sea = g.water > 0.6;
 			const mesh = new THREE.Mesh(geom, r.sea ? this.mats.sea : this.mats.land);
-			mesh.visible = false; mesh.matrixAutoUpdate = true;
+			mesh.visible = false; mesh.matrixAutoUpdate = true; mesh.receiveShadow = true;
 			this.root.add(mesh);
 			r.mesh = mesh;
 		}
@@ -220,7 +220,7 @@ export class EarthManager {
 		const want: TileId = r.id.z <= 13 ? r.id : ancestors(r.id).find((a) => a.z === 13) ?? r.id;
 		this.deps.loadImage(want, ac.signal).then((res) => {
 			this.activeImages = Math.max(0, this.activeImages - 1);
-			if (this.disposed || ac.signal.aborted) { res && 'close' in res.image && res.image.close?.(); return; }
+			if (this.disposed || ac.signal.aborted) { if (res && 'close' in res.image) res.image.close(); return; }
 			if (!res || !r.mesh) { r.img = 'failed'; return; }
 			const key = `${tileKey(res.tile)}`;
 			let base = this.textures.get(key);

@@ -86,3 +86,42 @@ describe('Standard atmosphere 1976 (published table values)', () => {
 	it('Mach 1 at sea level is 340 m/s', () => expect(mach(0, 340.29)).toBeCloseTo(1, 3));
 	it('below sea level is denser (Dead Sea, −430 m)', () => expect(airAt(-430).pressure).toBeGreaterThan(101325));
 });
+
+import { skyRadiance, sunTransmittance } from './atmosphere';
+
+describe('sky scattering (CPU twin of the shader)', () => {
+	const up = [0, 1, 0];
+	const el = (deg: number) => [Math.cos((deg * Math.PI) / 180), Math.sin((deg * Math.PI) / 180), 0];
+	it('the daytime zenith is blue (B > G > R)', () => {
+		const c = skyRadiance(10, [0, 1, 0], el(50), up).rgb;
+		expect(c[2]).toBeGreaterThan(c[1]); expect(c[1]).toBeGreaterThan(c[0]); expect(c[2]).toBeGreaterThan(0.05);
+	});
+	it('the horizon is paler (whiter) than the zenith at midday', () => {
+		const z = skyRadiance(10, [0, 1, 0], el(60), up).rgb, h = skyRadiance(10, [0, 0.02, -1], el(60), up).rgb;
+		expect(h[0] / h[2]).toBeGreaterThan(z[0] / z[2]);
+	});
+	it('the sun is orange-red at sunrise: red transmits far more than blue, and nearly nothing is lost overhead', () => {
+		const low = sunTransmittance(0, 1), high = sunTransmittance(0, 80);
+		expect(low[0]).toBeGreaterThan(low[2] * 3); expect(high[0]).toBeGreaterThan(0.8); expect(high[2]).toBeGreaterThan(0.6);
+	});
+	it('the sky goes dark after sunset and the planet casts a shadow', () => {
+		const night = skyRadiance(10, [0, 1, 0], el(-25), up).rgb, day = skyRadiance(10, [0, 1, 0], el(50), up).rgb;
+		expect(night[2]).toBeLessThan(day[2] * 0.01); expect(sunTransmittance(0, -10)).toEqual([0, 0, 0]);
+	});
+	it('from low orbit the limb glows blue and the black of space is above it', () => {
+		const h = 400000, a = Math.acos(6371000 / (6371000 + h)); // dip of the geometric horizon
+		const dirAt = (elev: number) => [Math.cos(elev), Math.sin(elev), 0];
+		const limb = skyRadiance(h, dirAt(-a + 0.012), el(30), [0, 1, 0]);
+		expect(limb.hitsPlanet).toBe(false);
+		expect(limb.rgb[2]).toBeGreaterThan(0.02); expect(limb.rgb[2]).toBeGreaterThan(limb.rgb[0]);
+		expect(Math.max(...skyRadiance(h, dirAt(0.3), el(30), [0, 1, 0]).rgb)).toBeLessThan(0.01);
+	});
+	it('looking straight down at the planet reports a surface hit; looking up does not', () => {
+		expect(skyRadiance(100, [0, -1, 0], el(40), up).hitsPlanet).toBe(true);
+		expect(skyRadiance(100, [0, 1, 0], el(40), up).hitsPlanet).toBe(false);
+	});
+	it('transmittance of the whole atmosphere straight up is high (≈ 0.9 red) and lower for blue', () => {
+		const t = skyRadiance(0, [0, 1, 0], el(40), up).transmittance;
+		expect(t[0]).toBeGreaterThan(0.85); expect(t[2]).toBeLessThan(t[0]);
+	});
+});

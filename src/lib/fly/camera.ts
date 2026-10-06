@@ -70,6 +70,11 @@ export class CameraRig {
 
 	constructor(mode: ViewMode = 'third', opts: RigOptions = {}) { this.mode = mode; this.comfort = opts.comfort ?? 1; this.reducedMotion = opts.reducedMotion ?? false; this.fov = mode === 'first' ? FIRST_PERSON_FOV : THIRD_PERSON_FOV; }
 
+	/** Re-base: the world origin moved, so every stored world position moves with it. */
+	shift(v: THREE.Vector3) { this.chasePos.add(v); this.from.pos.add(v); this.pose.pos.add(v); }
+	/** Forget the springs (after a teleport) so the camera starts exactly on its target. */
+	snap() { this.started = false; this.blend = 1; this.lean.set(0, 0, 0); this.leanVel.set(0, 0, 0); this.chaseVel.set(0, 0, 0); }
+
 	setMode(m: ViewMode) {
 		if (m === this.mode) return;
 		this.from = { pos: this.pose.pos.clone(), quat: this.pose.quat.clone() };

@@ -4,11 +4,16 @@
 import React, { useEffect, useState } from 'react';
 import Hangar from './Hangar';
 import FlightArena from './FlightArena';
+import EarthFlight from './EarthFlight';
 
-/** /fly shows the hangar (inspect the ship) or the flight arena (fly it in first or third person). `?mode=arena` opens the arena directly. */
+type Mode = 'hangar' | 'arena' | 'earth';
+
+/** /fly shows the hangar (inspect the ship), the test arena, or the real Earth (`?mode=earth`, optionally `&place=` or `&lat=&lon=`). */
 export default function FlyApp() {
-  const [mode, setMode] = useState<'hangar' | 'arena'>('hangar');
-  useEffect(() => { if (new URLSearchParams(window.location.search).get('mode') === 'arena') setMode('arena'); }, []);
-  const go = (m: 'hangar' | 'arena') => { setMode(m); try { const u = new URL(window.location.href); if (m === 'arena') u.searchParams.set('mode', 'arena'); else u.searchParams.delete('mode'); window.history.replaceState(null, '', u); } catch { /* ignore */ } };
-  return mode === 'arena' ? <FlightArena onBack={() => go('hangar')} /> : <Hangar onFly={() => go('arena')} />;
+  const [mode, setMode] = useState<Mode>('hangar');
+  useEffect(() => { const m = new URLSearchParams(window.location.search).get('mode'); if (m === 'arena' || m === 'earth') setMode(m); }, []);
+  const go = (m: Mode) => { setMode(m); try { const u = new URL(window.location.href); if (m === 'hangar') { u.search = ''; } else u.searchParams.set('mode', m); window.history.replaceState(null, '', u); } catch { /* ignore */ } };
+  if (mode === 'earth') return <EarthFlight onBack={() => go('hangar')} />;
+  if (mode === 'arena') return <FlightArena onBack={() => go('hangar')} />;
+  return <Hangar onFly={() => go('arena')} onEarth={() => go('earth')} />;
 }

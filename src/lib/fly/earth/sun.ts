@@ -35,3 +35,8 @@ export function sunElevation(date: Date, latDeg: number, lonDeg: number): number
 	const up: Vec3 = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
 	return deg(Math.asin(x * up[0] + y * up[1] + z * up[2]));
 }
+
+/** Greenwich apparent sidereal angle (rad): the rotation taking ECEF to the inertial (equator-of-date) frame is Rz(+θ). */
+export function gastRad(date: Date): number {
+	return (Astronomy.SiderealTime(Astronomy.MakeTime(date)) * 15 * Math.PI) / 180;
+}

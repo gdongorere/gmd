@@ -71,3 +71,87 @@ export const SKY = {
 	/** Solar illuminance scale used by the shader (arbitrary exposure unit; tone-mapped). */
 	sunIntensity: 22,
 };
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Single-scattering sky (Rayleigh + Mie), the CPU twin of the sky shader. It feeds the fog colour, the ambient light and the colour of the
+// sunlight reaching the ground, so the lighting of the terrain matches the sky overhead. Spherical planet (R = 6 371 km), exponential
+// density profiles, no multiple scattering (the shadowed sky is therefore a little too dark, a documented simplification), no ozone.
+
+const R_PLANET = 6371000;
+const R_ATMO = R_PLANET + 80000;
+
+export interface Radiance { rgb: [number, number, number]; transmittance: [number, number, number]; hitsPlanet: boolean }
+
+function raySphere(o: number[], d: number[], r: number): [number, number] | null {
+	const b = o[0] * d[0] + o[1] * d[1] + o[2] * d[2];
+	const c = o[0] * o[0] + o[1] * o[1] + o[2] * o[2] - r * r;
+	const disc = b * b - c;
+	if (disc < 0) return null;
+	const s = Math.sqrt(disc);
+	return [-b - s, -b + s];
+}
+
+/**
+ * Radiance seen along `dir` from a point at `altitude` above the surface, with `up` the local vertical and `sun` the unit direction to the Sun
+ * (all in the same frame). Units are arbitrary but consistent with the shader (tone-mapped on screen).
+ */
+export function skyRadiance(altitude: number, dir: number[], sun: number[], up: number[], steps = 16, lightSteps = 6): Radiance {
+	const pos = [up[0] * (R_PLANET + Math.max(altitude, 1)), up[1] * (R_PLANET + Math.max(altitude, 1)), up[2] * (R_PLANET + Math.max(altitude, 1))];
+	const atm = raySphere(pos, dir, R_ATMO);
+	if (!atm || atm[1] < 0) return { rgb: [0, 0, 0], transmittance: [1, 1, 1], hitsPlanet: false };
+	const t0 = Math.max(atm[0], 0);
+	let t1 = atm[1];
+	const pl = raySphere(pos, dir, R_PLANET);
+	const hits = !!pl && pl[0] > 0;
+	if (hits) t1 = Math.min(t1, pl![0]);
+	const ds = (t1 - t0) / steps;
+	const bR = SKY.rayleigh, bM = SKY.mie * 1.11;
+	let optR = 0, optM = 0;
+	const sumR = [0, 0, 0], sumM = [0, 0, 0];
+	for (let i = 0; i < steps; i++) {
+		const t = t0 + (i + 0.5) * ds;
+		const p = [pos[0] + dir[0] * t, pos[1] + dir[1] * t, pos[2] + dir[2] * t];
+		const h = Math.hypot(p[0], p[1], p[2]) - R_PLANET;
+		const dR = Math.exp(-h / SKY.hRayleigh) * ds, dM = Math.exp(-h / SKY.hMie) * ds;
+		optR += dR; optM += dM;
+		// light ray to the top of the atmosphere; skip if the planet blocks the Sun from this point
+		const pe = raySphere(p, sun, R_PLANET);
+		if (pe && pe[0] > 0) continue;
+		const la = raySphere(p, sun, R_ATMO);
+		if (!la) continue;
+		const lds = la[1] / lightSteps;
+		let lR = 0, lM = 0;
+		for (let j = 0; j < lightSteps; j++) {
+			const lt = (j + 0.5) * lds;
+			const lh = Math.hypot(p[0] + sun[0] * lt, p[1] + sun[1] * lt, p[2] + sun[2] * lt) - R_PLANET;
+			lR += Math.exp(-lh / SKY.hRayleigh) * lds; lM += Math.exp(-lh / SKY.hMie) * lds;
+		}
+		for (let c = 0; c < 3; c++) {
+			const att = Math.exp(-(bR[c] * (optR + lR) + bM * (optM + lM)));
+			sumR[c] += dR * att; sumM[c] += dM * att;
+		}
+	}
+	const mu = dir[0] * sun[0] + dir[1] * sun[1] + dir[2] * sun[2];
+	const phaseR = (3 / (16 * Math.PI)) * (1 + mu * mu);
+	const g = SKY.mieAnisotropy;
+	const phaseM = ((3 / (8 * Math.PI)) * ((1 - g * g) * (1 + mu * mu))) / ((2 + g * g) * Math.pow(1 + g * g - 2 * g * mu, 1.5));
+	const rgb: [number, number, number] = [0, 1, 2].map((c) => SKY.sunIntensity * (sumR[c] * bR[c] * phaseR + sumM[c] * SKY.mie * phaseM)) as [number, number, number];
+	const transmittance: [number, number, number] = [0, 1, 2].map((c) => Math.exp(-(bR[c] * optR + bM * optM))) as [number, number, number];
+	return { rgb, transmittance, hitsPlanet: hits };
+}
+
+/** Fraction of the Sun's light reaching a point at `altitude` when the Sun is at `elevationDeg` above the horizon, per RGB channel. */
+export function sunTransmittance(altitude: number, elevationDeg: number): [number, number, number] {
+	const e = (elevationDeg * Math.PI) / 180;
+	const up = [0, 1, 0], sun = [Math.cos(e), Math.sin(e), 0];
+	const pos = [0, R_PLANET + Math.max(altitude, 1), 0];
+	const pe = raySphere(pos, sun, R_PLANET);
+	if (pe && pe[0] > 0) return [0, 0, 0];
+	const la = raySphere(pos, sun, R_ATMO);
+	if (!la) return [1, 1, 1];
+	const N = 24, ds = la[1] / N;
+	let oR = 0, oM = 0;
+	for (let i = 0; i < N; i++) { const t = (i + 0.5) * ds; const h = Math.hypot(pos[0] + sun[0] * t, pos[1] + sun[1] * t, pos[2] + sun[2] * t) - R_PLANET; oR += Math.exp(-h / SKY.hRayleigh) * ds; oM += Math.exp(-h / SKY.hMie) * ds; }
+	void up;
+	return [0, 1, 2].map((c) => Math.exp(-(SKY.rayleigh[c] * oR + SKY.mie * 1.11 * oM))) as [number, number, number];
+}

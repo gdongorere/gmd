@@ -24,7 +24,7 @@ describe('Kestrel procedural model', () => {
 		const m = model();
 		const names = new Set<string>();
 		m.root.traverse((o) => names.add(o.name));
-		for (const n of ['canopy', 'frame-ring', 'engine-sphere', 'spine', 'wing-r', 'wing-l', 'turbine-shell', 'fan', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'lift-ring', 'seat-base', 'screen']) expect(names.has(n), n).toBe(true);
+		for (const n of ['canopy', 'frame-ring', 'engine-sphere', 'intake-grille', 'vent-star', 'gear-ball', 'spine', 'wing-r', 'wing-l', 'turbine-shell', 'fan', 'leg-0', 'leg-1', 'leg-2', 'leg-3', 'lift-ring', 'seat-base', 'screen']) expect(names.has(n), n).toBe(true);
 		m.dispose();
 	});
 	it('folding the gear raises the feet (the model gets shorter)', () => {
