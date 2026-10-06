@@ -21,6 +21,7 @@ tagged **⚠** and must be entered into code with `verified: false` until checke
 | `docs/fly/07-test-matrix.md` | unit/e2e/visual/manual test matrix and quality gates |
 | `docs/fly/08-glossary-sources-verification.md` | glossary, where to verify each number, the verification log template, known gaps |
 | `docs/fly/10-controller-support.md` | DualShock 4 / any-gamepad support on every device: approach, support matrix, `/stars` and `/fly` control maps, what is verified and what is not |
+| `docs/fly/12-streaming-and-loading.md` | **only what is near and needed is loaded**: residency states, interest and priority, eviction, per-asset-class loading table, terrain streaming, code splitting, budgets, streaming-aware speed tiers, load-time budgets, L-series tickets and tests |
 | `docs/fly/11-ship-roster.md` | **ship roster**: Kestrel (small), Wayfarer (heavy), Meridian (big expedition ship), hangar select, mothership launch/dock/switch, per-ship flight data, tickets, tests |
 | `docs/fly/09-physicality-charter.md` | **binding realism rules**: every effect has a physical driver; ship, fluid, light, sound, terrain and feedback physics; realism tickets, declared departures and acceptance tests |
 
@@ -47,8 +48,8 @@ game-like, full-screen, HUD-overlaid view with a clean "hide interface" mode (al
 4. **Believable ships, big or small.** Pick a nimble bubble-canopy craft or a heavy expedition ship (or fly both: the big one carries the small one). Weight and momentum, loud when it should be, silent in vacuum; one physics engine, different data.
 5. **Always recoverable, never frustrating.** Crushed on Venus or burned at the Sun? The ship is "recalled" to orbit with a
    plain explanation of what killed it. No gore, no dead ends.
-6. **Instant everywhere.** Something moves within a second; heavy assets stream behind the scene; a weaker device gets
-   a lower tier, never a broken page.
+6. **Instant everywhere, and only what is near and needed is loaded.** Something moves within a second; the default state of everything is *unloaded*, and an asset is resident only while a defined interest keeps it
+   there (in view, within range, on the predicted path, or selected as a destination), then it is evicted. Heavy assets stream behind the scene; a weaker device gets a lower tier, never a broken page. The system is specified in `docs/fly/12-streaming-and-loading.md` and is binding on every ticket.
 7. **Everything physical (binding).** Gee's direction is that everything must feel real and physical: every visual, sound, camera motion and haptic is driven by a simulated physical quantity, with no cosmetic-only effects. The rules, systems, tickets and tests are in `docs/fly/09-physicality-charter.md` and override any softer wording elsewhere.
 8. **Say what is real and what is invented.** A "reality" panel per body lists which values are measured, modelled or
    artistic, exactly as the time machine does.
@@ -228,9 +229,19 @@ give ~15–16 digits, so **simulation is float64 everywhere** and **rendering is
 - **Ephemeris** is sampled each render frame at the clock's JD and *interpolated linearly in between* (a 10–60 s window)
   for speed; positions are re-queried exactly on tier changes and every second. Cost target: all bodies < 1 ms/frame (§11.4).
 
+### 5.3b Streaming and residency (summary; full design in `docs/fly/12-streaming-and-loading.md`)
+
+Every asset (code chunk, data table, texture, mesh, terrain tile, LUT, ship, audio graph) is a `Streamable` with an owner, a byte cost, an **interest rule** (frustum/angular size, distance and sphere of influence, **predicted path**, player intent, mode), a hysteresis band and an eviction path. A `ResidencyManager` and `Scheduler` (priority = interest × urgency ÷ cost, per-kind concurrency, cancellation, ≤ 2 ms/frame of main-thread work) keep the resident set inside per-tier budgets; a `ResourceTracker` owns every GPU object so eviction truly frees memory. Consequences that shape the rest of the plan:
+
+- **Far bodies are KB-sized sprites** from a core table that is always resident; a body's detail (atmosphere, wind, palette, landmarks) is a lazy chunk loaded on approach or when it is selected as a target; terrain, LUTs and clouds exist only for the **current** body.
+- **Terrain** is a quadtree whose resident set is the tiles the screen-space-error budget needs (≈ 300–900 tiles), generated in workers, with parents kept until children land (no holes).
+- **Ships:** only the selected/active hull is resident (a second one only when docked or within physics range).
+- **Speed tiers obey streaming readiness:** `v_max = min(tier cap, bubble cap, ready radius ÷ measured load time)`; "Slowing for Mars" doubles as "streaming ahead", and there is never a blocking load screen in flight.
+- **Code splitting:** shell → hangar → flight → per-world chunks → audio → map, each a dynamic `import()`; a Moon-only session never fetches Mars, Jupiter or Saturn code or data.
+
 ### 5.4 Module boundaries (so work can parallelise)
 
-`bodies.ts` (data) → `ephemeris`/`frames` (where things are) → `gravity`/`integrator` (how the ship moves) → `atmosphere`/`wind`/
+`bodies.ts` (core table always resident; per-body detail lazy) → `stream/*` (what is loaded) → `ephemeris`/`frames` (where things are) → `gravity`/`integrator` (how the ship moves) → `atmosphere`/`wind`/
 `aero`/`thermal` (what the air does) → `ship`/`contact` (what the ship does) → `render/*` and `audio/*` (what you see and hear).
 Each layer is pure TypeScript with unit tests; only `render/*`, `audio/*`, `input/*` and `components/fly/*` touch the browser.
 
@@ -513,7 +524,7 @@ Size budget: **≤ 25 MB per body** compressed, lazy-loaded per tile.
 Far pass: standard depth with near=1 km, far=10¹⁴ m after scaling. Near pass: reverse-Z where `EXT_clip_control` exists, else log depth.
 Every transform is camera-relative double→float; terrain tile vertices are tile-local metres (< 2¹⁸ m, safe in float32).
 
-### 11.3 Memory and draw-call budgets
+### 11.3 Memory and draw-call budgets (residency budgets per tier are in `docs/fly/12-streaming-and-loading.md` §8)
 Target ≤ 600 MB GPU on `ultra`, ≤ 250 MB on `medium`, ≤ 120 MB on `low`; ≤ 400 draw calls; ≤ 1.5 M triangles on screen
 (`high`). Texture compression (KTX2/Basis) for baked assets; procedural textures are small (≤ 2k).
 
@@ -715,6 +726,8 @@ imports record their dataset name and licence. Any value Gee confirms flips `ver
 | "KSP-style" expectations vs forgiving game | disappointment | clear difficulty presets; assisted by default; realistic fuel optional |
 | Motion sickness / photosensitivity | harm | comfort settings, flash limits, reduced-motion path (§13.3) |
 | Audio annoyance | UX | opt-in, limiter, captions |
+| Streaming misses (holes, popping, outrunning the loader) | broken world, frustration | parents stay resident; geomorphing; readiness-gated speed tiers; hysteresis; the streaming lens; tests in `12` §12 |
+| Memory growth / leaks over long sessions | crashes on phones | ResourceTracker, per-tier byte budgets, pressure levels with automatic downgrade, 10-minute soak test in CI |
 | Bundle size | slow `/stars` and `/` | `/fly` is a separate route chunk, lazy imports for workers/WASM, no shared growth; size checked in F12 |
 | Data wrongly presented as fact | trust | verified flags, reality panel, doc log, tests that require a `source` |
 | Browser limits (`requestFullscreen`, gamepad, pointer lock) | partial features | feature detection with graceful fallbacks, documented per browser |
@@ -735,6 +748,7 @@ stable timing; software WebGL is slow, so the 3D scene already starts at half pi
 - The Wayfarer is large, believable, damage-aware and works in chase and cockpit views; the ship is original or has a recorded licence.
 - Heat, g-load, crush depth, radiation and fuel behave as specified and recall instead of hard failing.
 - Hide-interface, pause, reduced-motion, keyboard-only, gamepad and touch all work; accessibility checks pass.
+- Only what is near and needed is loaded: a Moon-only session fetches no other world's code or data, `/fly` first load meets the §9 budgets in `docs/fly/12-streaming-and-loading.md`, resident memory stays under the tier budget in a 10-minute soak, and flying away from a world returns GPU object counts to baseline.
 - Unit + e2e (desktop + mobile) green; build and lint clean; no console errors; performance tiers behave; bundle budgets respected.
 - Every number shown to the player has a source or is labelled approximate/unverified/artistic, and the verification log is current.
 
