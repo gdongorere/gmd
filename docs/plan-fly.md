@@ -20,6 +20,7 @@ tagged **⚠** and must be entered into code with `verified: false` until checke
 | `docs/fly/06-ship-spec.md` | the Wayfarer: dimensions, thrusters, gear, limits, procedural construction rules, budgets |
 | `docs/fly/07-test-matrix.md` | unit/e2e/visual/manual test matrix and quality gates |
 | `docs/fly/08-glossary-sources-verification.md` | glossary, where to verify each number, the verification log template, known gaps |
+| `docs/fly/09-physicality-charter.md` | **binding realism rules**: every effect has a physical driver; ship, fluid, light, sound, terrain and feedback physics; realism tickets, declared departures and acceptance tests |
 
 ---
 
@@ -46,7 +47,8 @@ game-like, full-screen, HUD-overlaid view with a clean "hide interface" mode (al
    plain explanation of what killed it. No gore, no dead ends.
 6. **Instant everywhere.** Something moves within a second; heavy assets stream behind the scene; a weaker device gets
    a lower tier, never a broken page.
-7. **Say what is real and what is invented.** A "reality" panel per body lists which values are measured, modelled or
+7. **Everything physical (binding).** Gee's direction is that everything must feel real and physical: every visual, sound, camera motion and haptic is driven by a simulated physical quantity, with no cosmetic-only effects. The rules, systems, tickets and tests are in `docs/fly/09-physicality-charter.md` and override any softer wording elsewhere.
+8. **Say what is real and what is invented.** A "reality" panel per body lists which values are measured, modelled or
    artistic, exactly as the time machine does.
 
 ### Non-goals (v1)
