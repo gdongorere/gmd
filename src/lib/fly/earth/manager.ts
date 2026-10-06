@@ -27,6 +27,10 @@ export interface ManagerOptions {
 	maxConcurrent?: number;
 	maxImageConcurrent?: number;
 	maxRecords?: number;
+	/** Tile meshes built per frame (the rest wait), so a burst of arrivals cannot stall a frame on a slow device. */
+	maxBuildsPerFrame?: number;
+	/** Lambert instead of PBR shading on the terrain (much cheaper on mobile GPUs; loses the sea's sun glint). */
+	cheapMaterials?: boolean;
 	tolerance?: number;
 	maxTiles?: number;
 	budget?: Budget;
@@ -53,6 +57,7 @@ export class EarthManager {
 	private recs = new Map<string, Rec>();
 	private active = 0;
 	private clock = 0;
+	private buildQueue: { r: Rec; h: HeightTile; synthetic: boolean }[] = [];
 	private activeImages = 0;
 	private lastSelect = -1e9;
 	private selected: SelectedTile[] = [];
@@ -65,15 +70,21 @@ export class EarthManager {
 	private pv = new THREE.Matrix4();
 	private sphere = new THREE.Sphere();
 	private tmp = new THREE.Vector3();
-	private mats = (() => {
-		const make = (roughness: number, back: boolean) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness, metalness: 0, side: THREE.DoubleSide, polygonOffset: back, polygonOffsetFactor: back ? 3 : 0, polygonOffsetUnits: back ? 3 : 0 });
-		// "back" variants are used for coarse ancestors shown in place of a tile that is still loading: pushed behind the finer neighbours.
-		return { land: make(0.96, false), sea: make(0.12, false), landBack: make(0.96, true), seaBack: make(0.12, true) };
-	})();
+	private mats!: { land: THREE.Material; sea: THREE.Material; landBack: THREE.Material; seaBack: THREE.Material };
 	private textures = new Map<string, THREE.Texture>();
 	imageryEnabled = true;
 
 	constructor(private deps: ManagerDeps, private opts: ManagerOptions = {}) {
+		this.mats = (() => {
+		const cheap = !!opts.cheapMaterials;
+		const make = (roughness: number, back: boolean): THREE.MeshStandardMaterial | THREE.MeshLambertMaterial => {
+			const common = { vertexColors: true, side: THREE.FrontSide, polygonOffset: back, polygonOffsetFactor: back ? 3 : 0, polygonOffsetUnits: back ? 3 : 0 };
+			return cheap ? new THREE.MeshLambertMaterial(common) : new THREE.MeshStandardMaterial({ ...common, roughness, metalness: 0 });
+		};
+		// "back" variants are used for coarse ancestors shown in place of a tile that is still loading: pushed behind the finer neighbours.
+		return { land: make(0.96, false), sea: make(0.12, false), landBack: make(0.96, true), seaBack: make(0.12, true) };
+})();
+
 		this.budget = opts.budget ?? new Budget('high');
 		this.tracker = new ResourceTracker(this.budget);
 		this.root.frustumCulled = false;
@@ -118,6 +129,7 @@ export class EarthManager {
 			});
 			this.plan(now);
 		}
+		this.drainBuilds();
 		this.show(frame, now);
 		this.pump(now);
 	}
@@ -163,7 +175,7 @@ export class EarthManager {
 			if (isFine) fine++;
 		}
 		// Abort loads nobody wants any more.
-		for (const r of this.recs.values()) if (r.state === 'loading' && r.priority === Infinity && now - r.wantedAt > 2000) { r.abort?.abort(); r.state = 'idle'; r.abort = undefined; this.active = Math.max(0, this.active - 1); }
+		for (const r of this.recs.values()) if (r.state === 'loading' && r.abort && r.priority === Infinity && now - r.wantedAt > 2000) { r.abort?.abort(); r.state = 'idle'; r.abort = undefined; this.active = Math.max(0, this.active - 1); }
 		// Imagery for displayed tiles
 		if (this.imageryEnabled && this.deps.loadImage) {
 			for (const r of this.recs.values()) {
@@ -181,12 +193,19 @@ export class EarthManager {
 		this.deps.loadHeights(r.id, ac.signal).then((h) => {
 			if (this.disposed || ac.signal.aborted) return;
 			this.active = Math.max(0, this.active - 1);
-			this.accept(r, h, false);
+			r.abort = undefined; this.buildQueue.push({ r, h, synthetic: false });
 		}).catch((e: unknown) => {
 			if (this.disposed || ac.signal.aborted) return;
 			this.active = Math.max(0, this.active - 1);
-			if (r.attempts >= 2) { void e; this.accept(r, flatTile(r.id), true); } else { r.state = 'failed'; r.failedAt = this.clock; }
+			if (r.attempts >= 2) { void e; r.abort = undefined; this.buildQueue.push({ r, h: flatTile(r.id), synthetic: true }); } else { r.state = 'failed'; r.failedAt = this.clock; }
 		});
+	}
+
+	private drainBuilds() {
+		for (let n = 0; n < (this.opts.maxBuildsPerFrame ?? 2) && this.buildQueue.length; n++) {
+			const b = this.buildQueue.shift()!;
+			if (this.recs.get(b.r.key) === b.r) this.accept(b.r, b.h, b.synthetic);
+		}
 	}
 
 	private accept(r: Rec, h: HeightTile, synthetic: boolean) {
@@ -302,7 +321,7 @@ export class EarthManager {
 		if (this.disposed) return;
 		this.disposed = true;
 		for (const r of this.recs.values()) { r.abort?.abort(); r.imgAbort?.abort(); }
-		this.recs.clear(); this.textures.clear();
+		this.recs.clear(); this.textures.clear(); this.buildQueue.length = 0;
 		this.tracker.disposeAll();
 		this.root.clear();
 	}

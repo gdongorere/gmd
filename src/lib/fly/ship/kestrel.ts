@@ -20,6 +20,8 @@ export interface KestrelOptions {
 	glass?: 'physical' | 'simple';
 	/** Sphere tessellation (segments around). 48 is plenty; 24 for the low tier. */
 	detail?: number;
+	/** Standard instead of clear-coated physical materials (a large saving on mobile GPUs). */
+	cheap?: boolean;
 	/** Canvas panel-line texture for the pods (browser only). Off in unit tests. */
 	textures?: boolean;
 }
@@ -43,7 +45,7 @@ export interface KestrelModel {
 }
 
 // --- palette ------------------------------------------------------------------------------------
-const WHITE = 0xe9ecee, GRAPHITE = 0x2a2d33, STEEL = 0x8e949c, AMBER = 0xffa23a, CYAN = 0x66e0ff;
+const WHITE = 0xe9ecee, GRAPHITE = 0x2a2d33, STEEL = 0x8e949c, AMBER = 0xffa23a;
 
 /** Panel-line texture for the white pods: a faint grid of seams and a few rivet dots. Browser only. */
 function panelTexture(): THREE.Texture | null {
@@ -72,13 +74,15 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const tex = opts.textures === false ? null : panelTexture();
 	if (tex) own(tex);
 
+	// Physical materials add a clear-coat pass; the cheap path uses plain PBR with the same colours.
+	const phys = (base: THREE.MeshStandardMaterialParameters, extra: Record<string, unknown> = {}) => (opts.cheap ? new THREE.MeshStandardMaterial(base) : new THREE.MeshPhysicalMaterial({ ...base, ...extra } as THREE.MeshPhysicalMaterialParameters));
 	// ---- materials ----------------------------------------------------------------------------
-	const ceramic = own(new THREE.MeshPhysicalMaterial({ color: WHITE, roughness: 0.32, metalness: 0.15, clearcoat: 0.7, clearcoatRoughness: 0.2, map: tex ?? undefined }));
+	const ceramic = own(phys({ color: WHITE, roughness: 0.32, metalness: 0.15, map: tex ?? undefined }, { clearcoat: 0.7, clearcoatRoughness: 0.2 }));
 	const graphite = own(new THREE.MeshStandardMaterial({ color: GRAPHITE, roughness: 0.55, metalness: 0.65 }));
 	const steel = own(new THREE.MeshStandardMaterial({ color: STEEL, roughness: 0.3, metalness: 0.95 }));
-	const wingMat = own(new THREE.MeshPhysicalMaterial({ color: 0xdfe5ea, roughness: 0.25, metalness: 0.1, clearcoat: 0.6, transparent: true, opacity: 0.92 }));
+	const wingMat = own(phys({ color: 0xdfe5ea, roughness: 0.25, metalness: 0.1, transparent: true, opacity: 0.92 }, { clearcoat: 0.6 }));
 	const glass = opts.glass === 'simple'
-		? own(new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.16, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false }))
+		? own(phys({ color: 0xbfe6ff, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }, { clearcoat: 1 }))
 		: own(new THREE.MeshPhysicalMaterial({ color: 0xd8f0ff, roughness: 0.02, metalness: 0, transmission: 0.95, thickness: 0.05, ior: 1.45, transparent: true, clearcoat: 1, side: THREE.DoubleSide, depthWrite: false }));
 	const lightMat = (c: number) => own(new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
 	const amberGlow = lightMat(AMBER), screenMat = lightMat(0x2fb6e8);
@@ -192,7 +196,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const ringR = 0.85;
 	const tail = new THREE.Group(); tail.name = 'tail'; tail.position.set(-5.35, 1.06, 0); root.add(tail);
 	const turbine = new THREE.Group(); turbine.name = 'turbine'; tail.add(turbine);
-	const bandMat = own(new THREE.MeshPhysicalMaterial({ color: WHITE, roughness: 0.32, metalness: 0.15, clearcoat: 0.7, clearcoatRoughness: 0.2, side: THREE.DoubleSide }));
+	const bandMat = own(phys({ color: WHITE, roughness: 0.32, metalness: 0.15, side: THREE.DoubleSide }, { clearcoat: 0.7, clearcoatRoughness: 0.2 }));
 	const duct = addMesh(turbine, new THREE.CylinderGeometry(ringR, ringR, 0.36, seg * 2, 1, true), bandMat, 'turbine-shell'); duct.rotation.x = Math.PI / 2; // axis along the span: the ring faces left and right
 	for (const z of [0.18, -0.18]) { const lip = addMesh(turbine, new THREE.TorusGeometry(ringR, 0.04, 8, seg * 2), steel, 'turbine-lip'); lip.position.z = z; lip.castShadow = false; }
 	const inner = addMesh(turbine, new THREE.CylinderGeometry(ringR * 0.74, ringR * 0.74, 0.3, seg * 2, 1, true), graphite, 'turbine-inner'); inner.rotation.x = Math.PI / 2;
@@ -214,10 +218,11 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		return m;
 	};
 	interface Leg { hip: THREE.Group; axis: THREE.Vector3 }
+	const legHolder = new THREE.Group(); legHolder.name = 'gear'; root.add(legHolder); // the four legs; hidden entirely when retracted
 	const legs: Leg[] = [];
 	const footY = -2.0 - (-0.76); // foot height relative to the hip (hip sits at the ball)
 	([[1, 1], [1, -1], [-1, 1], [-1, -1]] as const).forEach(([fa, side], i) => {
-		const hip = new THREE.Group(); hip.name = `leg-${i}`; hip.position.set(fa * 0.1, -0.76, side * 0.1); root.add(hip);
+		const hip = new THREE.Group(); hip.name = `leg-${i}`; hip.position.set(fa * 0.1, -0.76, side * 0.1); legHolder.add(hip);
 		const foot = V(fa * 2.0, footY, side * 2.5);
 		const knee = foot.clone().multiplyScalar(0.46).add(V(fa * 0.1, 0.22, side * 0.25)); // the knee bows up and out
 		strutBetween(hip, V(0, 0, 0), knee, 0.09, ceramic, 'leg-upper');
@@ -245,10 +250,12 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		turbine.rotation.y = (Math.PI / 2) * cruise; // 0: axis along Z (side-facing); 1: axis along X, plume aft
 		// Legs swing up and out of the way as `gear` goes 1 → 0.
 		legs.forEach((l) => l.hip.quaternion.setFromAxisAngle(l.axis, 1.25 * (1 - gear)));
+		legHolder.visible = gear > 0.02; // fully retracted: the legs are tucked away and not drawn
 	};
 	apply();
 
 	const box = new THREE.Box3();
+	const shown = (o: THREE.Object3D) => { for (let n: THREE.Object3D | null = o; n; n = n.parent) if (!n.visible) return false; return true; };
 	return {
 		root,
 		setThrust(t) { thrust = Math.min(1, Math.max(0, t)); apply(); },
@@ -259,11 +266,11 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		update(dt) { fanAngle += dt * (4 + 60 * thrust); fan.rotation.z = fanAngle; },
 		stats() {
 			let tri = 0, meshes = 0; const mats = new Set<THREE.Material>();
-			root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh) { meshes++; tri += triangles(m.geometry); const mm = m.material; (Array.isArray(mm) ? mm : [mm]).forEach((x) => mats.add(x)); } });
+			root.traverse((o) => { if (!shown(o)) return; const m = o as THREE.Mesh; if (m.isMesh) { meshes++; tri += triangles(m.geometry); const mm = m.material; (Array.isArray(mm) ? mm : [mm]).forEach((x) => mats.add(x)); } });
 			root.updateMatrixWorld(true);
 			// Measure the hull only (not the additive plume cones, which are effects).
 			box.makeEmpty();
-			root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry.type !== 'ConeGeometry' && m.parent?.name !== 'lift-plume') box.expandByObject(m); });
+			root.traverse((o) => { if (!shown(o)) return; const m = o as THREE.Mesh; if (m.isMesh && m.geometry.type !== 'ConeGeometry' && m.parent?.name !== 'lift-plume') box.expandByObject(m); });
 			return { triangles: tri, meshes, size: box.getSize(new THREE.Vector3()), materials: mats.size };
 		},
 		dispose() { owned.forEach((o) => o.dispose()); },

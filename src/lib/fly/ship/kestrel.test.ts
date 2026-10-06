@@ -36,6 +36,15 @@ describe('Kestrel procedural model', () => {
 		expect(Math.abs(m.stats().size.y - down)).toBeLessThan(1e-6);
 		m.dispose();
 	});
+	it('retracted gear is hidden entirely and comes back when deployed', () => {
+		const m = model();
+		const gear = m.root.getObjectByName('gear')!;
+		expect(gear.visible).toBe(true);
+		m.setGear(0.5); expect(gear.visible).toBe(true);
+		m.setGear(0); expect(gear.visible).toBe(false);
+		m.setGear(1); expect(gear.visible).toBe(true);
+		m.dispose();
+	});
 	it('cruise swings the turbine from sideways to aft', () => {
 		const m = model();
 		const t = m.root.getObjectByName('turbine')!;

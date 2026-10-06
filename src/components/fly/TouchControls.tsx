@@ -49,7 +49,7 @@ function Hold({ label, onChange, testId, children }: { label: string; onChange: 
   );
 }
 
-export interface TouchActions { gear: () => void; view: () => void; respawn: () => void }
+export interface TouchActions { view: () => void; respawn: () => void }
 
 /**
  * On-screen flight controls for touch devices: left stick = thrust (up/down) and strafe, right stick = yaw and pitch, a climb/descend pair,
@@ -75,7 +75,6 @@ export default function TouchControls({ input, actions }: { input: React.Mutable
       </Flex>
       <Flex position="absolute" top="max(12px, env(safe-area-inset-top))" right="max(12px, env(safe-area-inset-right))" gap={2} pointerEvents="auto">
         <Button size="sm" variant="glass" onClick={() => actions()?.view()} data-testid="btn-view">View</Button>
-        <Button size="sm" variant="glass" onClick={() => actions()?.gear()} data-testid="btn-gear">Gear</Button>
         <Button size="sm" variant="glass" onClick={() => actions()?.respawn()} data-testid="btn-respawn">Reset</Button>
       </Flex>
     </Box>
