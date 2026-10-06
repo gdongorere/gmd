@@ -8,6 +8,8 @@ Sandbox facts that shape the plan are in §19.
 below was recalled from memory while planning, because the build sandbox can reach only the npm registry. They are all
 tagged **⚠** and must be entered into code with `verified: false` until checked against a source (§18).
 
+> **Starting a new session? Read `docs/fly/CONTINUE.md` first**: current status, what exists in code, rules, and the next steps.
+
 ## Companion documents (read these with the master plan)
 
 | File | What it holds |
