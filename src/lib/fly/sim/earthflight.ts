@@ -48,7 +48,6 @@ export interface EarthOptions {
 	inertialFrame?: boolean;
 }
 
-const OMEGA: Vec3 = [0, 0, EARTH.omega];
 
 export const totalMass = (s: EarthState, spec: ShipSpec = KESTREL) => spec.mass.dry + s.propellant;
 
