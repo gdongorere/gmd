@@ -89,7 +89,8 @@ export class CameraRig {
 		const target = chaseTarget(shipPos, shipQuat);
 		if (!this.started) { this.chasePos.copy(target); this.started = true; this.prevVel.copy(shipVel); }
 		const w = 3.2;
-		const acc = target.clone().sub(this.chasePos).multiplyScalar(w * w).addScaledVector(this.chaseVel, -2 * w);
+		// Track the ship's velocity too (not only its position), so the camera does not trail further behind the faster the ship goes.
+		const acc = target.clone().sub(this.chasePos).multiplyScalar(w * w).addScaledVector(this.chaseVel.clone().sub(shipVel), -2 * w);
 		this.chaseVel.addScaledVector(acc, d); this.chasePos.addScaledVector(this.chaseVel, d);
 		// Keep the chase camera above the ship's feet so it never dips under a landing pad.
 		this.chasePos.y = Math.max(this.chasePos.y, shipPos.y + 1.2);

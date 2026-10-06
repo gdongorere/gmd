@@ -33,6 +33,10 @@ export interface EarthState {
 	main: number;
 	/** Forward thrust, newtons, signed (negative while braking). */
 	mainSigned: number;
+	/** Flight mode: the thrusters aim aft for fast forward flight and the wings carry the weight. Hover mode is the VTOL default. */
+	flightMode: boolean;
+	/** Throttle lever 0…1 in flight mode (W/S move it, like an aircraft). */
+	throttle: number;
 }
 
 export interface TerrainQuery {
@@ -66,7 +70,7 @@ export function spawnOnGround(latDeg: number, lonDeg: number, headingDeg: number
 	const p = geodeticToEcef(lat, lon, groundHeight + FOOT_OFFSET.down);
 	const s: EarthState = {
 		pos: new THREE.Vector3(...p), vel: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(),
-		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0, mainSigned: 0,
+		propellant: spec.mass.propellant, gear: true, landed: true, time: 0, event: null, hover: 0, main: 0, mainSigned: 0, flightMode: false, throttle: 0,
 	};
 	setAttitude(s.q, lat, lon, rad(headingDeg), 0);
 	return s;
@@ -104,9 +108,35 @@ function altitudeApprox(p: Vec3): number {
 	return r - (a * b) / Math.sqrt((b * cosPsi) ** 2 + (a * sinPsi) ** 2);
 }
 
+/**
+ * Aerodynamics of the airframe (GAMEPLAY values, tagged G in docs/fly/11): the body is streamlined nose-on and blunt broadside, and the
+ * fuselage and fins act as a lifting body. Drag is applied per body axis; lift follows the angle of attack; induced drag follows lift².
+ */
+export const AERO = {
+	/** Drag area C_D·A nose-on (m²); the vertical axis uses the ship's `cdA` (broadside from above), the lateral axis `Cz`. */
+	Cx: 7,
+	Cz: 40,
+	/** Lifting area (m²), lift-curve slope (per rad), induced-drag factor. */
+	S: 16,
+	slope: 4.2,
+	k: 0.08,
+};
+
+/** Lift coefficient vs angle of attack (rad): linear to 0.3 rad, then a stall that sheds lift. */
+export function liftCoefficient(alpha: number): number {
+	const a = Math.abs(alpha);
+	const c = a < 0.3 ? AERO.slope * a : Math.max(0.35, AERO.slope * 0.3 - 2.4 * (a - 0.3));
+	return Math.sign(alpha) * c;
+}
+
+/** In hover mode the forward thrust fades out between 30 and 50 m/s: the pods are configured for lift, so fast flight needs flight mode. */
+const HOVER_MODE_LIMIT = (vx: number) => Math.min(1, Math.max(0, (50 - vx) / 20));
+
+interface Body { fwd: Vec3; up: Vec3; right: Vec3; brake: number }
+
 const T = { e: new THREE.Euler(), qd: new THREE.Quaternion(), f: new THREE.Vector3(), u: new THREE.Vector3(), r: new THREE.Vector3(), n: new THREE.Vector3() };
 
-function accel(pos: Vec3, vel: Vec3, thrustPerMass: Vec3, spec: ShipSpec, mass: number, opts: EarthOptions): Vec3 {
+function accel(pos: Vec3, vel: Vec3, thrustPerMass: Vec3, spec: ShipSpec, mass: number, opts: EarthOptions, body?: Body): Vec3 {
 	const g = gravityEcef(pos[0], pos[1], pos[2]);
 	let ax = g[0] + thrustPerMass[0], ay = g[1] + thrustPerMass[1], az = g[2] + thrustPerMass[2];
 	if (!opts.inertialFrame) {
@@ -120,9 +150,24 @@ function accel(pos: Vec3, vel: Vec3, thrustPerMass: Vec3, spec: ShipSpec, mass: 
 		const alt = altitudeApprox(pos);
 		const a = airAt(alt);
 		const rho = opts.rho ?? a.density;
-		if (rho > 0) {
+		if (rho > 0 && !body) {
 			const k = (-0.5 * rho * spec.cdA * dragRise(speed / a.speedOfSound) * speed) / mass;
 			ax += k * vel[0]; ay += k * vel[1]; az += k * vel[2];
+		} else if (rho > 0 && body) {
+			const dot = (u: Vec3) => vel[0] * u[0] + vel[1] * u[1] + vel[2] * u[2];
+			const vx = dot(body.fwd), vy = dot(body.up), vz = dot(body.right);
+			const half = 0.5 * rho * speed;
+			const cx = AERO.Cx * (1 + 3 * body.brake) * dragRise(speed / a.speedOfSound);
+			// drag along each body axis
+			let fx = -half * cx * vx, fy = -half * spec.cdA * vy, fz = -half * AERO.Cz * vz;
+			// wing lift (along the body's up axis) and induced drag, from the angle of attack
+			if (vx > 0.5) {
+				const q = 0.5 * rho * vx * vx * AERO.S, cl = liftCoefficient(Math.atan2(-vy, vx));
+				fy += q * cl; fx -= q * AERO.k * cl * cl;
+			}
+			ax += (fx * body.fwd[0] + fy * body.up[0] + fz * body.right[0]) / mass;
+			ay += (fx * body.fwd[1] + fy * body.up[1] + fz * body.right[1]) / mass;
+			az += (fx * body.fwd[2] + fy * body.up[2] + fz * body.right[2]) / mass;
 		}
 	}
 	return [ax, ay, az];
@@ -157,13 +202,30 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 	const gv = gravityEcef(s.pos.x, s.pos.y, s.pos.z);
 	const gLocal = -((gv[0] + EARTH.omega ** 2 * s.pos.x) * n.x + (gv[1] + EARTH.omega ** 2 * s.pos.y) * n.y + gv[2] * n.z);
 
+	// ---- flight mode: thrusters aimed aft, throttle lever, wings carry the weight, tail stabiliser keeps the nose on the flight path
+	const flight = s.flightMode && !s.landed;
+	const vx = s.vel.dot(fwd), vzB = s.vel.dot(right), vUp0 = s.vel.dot(n), sp = s.vel.length();
+	const rho0 = opts.rho ?? airAt(geo.h).density;
+	if (flight) s.throttle = Math.min(1, Math.max(0, s.throttle + inp.forward * dt * 0.45)); else s.throttle = 0;
+	const flightAssist = flight && (opts.hoverAssist ?? true) && vx > 25;
+
 	// attitude: first-order rate response, optional levelling toward the true local vertical
 	let cmdRoll = inp.roll * MAX_RATE.roll, cmdPitch = inp.pitch * MAX_RATE.pitch;
-	const cmdYaw = -inp.yaw * MAX_RATE.yaw;
+	let cmdYaw = -inp.yaw * MAX_RATE.yaw;
 	if ((opts.levelAssist ?? true) && !s.landed) {
 		if (inp.roll === 0) cmdRoll += right.dot(n) * 1.6;
-		if (inp.pitch === 0) cmdPitch += -fwd.dot(n) * 1.6;
+		if (inp.pitch === 0 && !flight) cmdPitch += -fwd.dot(n) * 1.6;
 	}
+	if (flightAssist) {
+		// Hold the flight path: aim the nose at (flight-path angle + the angle of attack that makes lift equal weight), correcting climb rate.
+		const q = Math.max(1, 0.5 * rho0 * vx * vx);
+		const gamma = Math.asin(Math.max(-1, Math.min(1, vUp0 / Math.max(1, sp))));
+		const alphaTrim = Math.min(0.28, Math.max(0, (m * gLocal * Math.cos(gamma)) / (q * AERO.S * AERO.slope)));
+		const gammaCmd = inp.pitch !== 0 ? inp.pitch * 0.3 : Math.max(-0.12, Math.min(0.12, -0.04 * vUp0));
+		const theta = Math.asin(Math.max(-1, Math.min(1, fwd.dot(n))));
+		cmdPitch = Math.max(-MAX_RATE.pitch, Math.min(MAX_RATE.pitch, 2.5 * (gamma + alphaTrim + 1.5 * (gammaCmd - gamma) - theta)));
+	}
+	if (flight && sp > 20) cmdYaw += -Math.max(-0.6, Math.min(0.6, 2 * Math.atan2(vzB, Math.max(1, vx)))); // the tail fin weathervanes the nose into the airflow
 	const k = 1 - Math.exp(-dt / 0.25);
 	s.w.x += (cmdRoll - s.w.x) * k; s.w.y += (cmdYaw - s.w.y) * k; s.w.z += (cmdPitch - s.w.z) * k;
 	if (s.landed) { s.w.x *= 0.2; s.w.z *= 0.2; }
@@ -173,7 +235,13 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 	// thrust
 	const vUp = s.vel.dot(n);
 	let hover = 0;
-	if ((opts.hoverAssist ?? true) && s.landed && inp.collective <= 0.05) {
+	const blend = flight ? Math.min(1, Math.max(0, 1 - (vx - 25) / 60)) : 1; // lift engines fade out as the wings take over (25 → 85 m/s)
+	if (flight && !(opts.hoverAssist ?? true)) {
+		hover = 0; // pure aircraft: no lift engines
+	} else if (flight) {
+		const vzCmd = inp.collective * 8, aCmd = gLocal + 2.2 * (vzCmd - vUp);
+		hover = (blend * (m * aCmd)) / Math.max(0.25, up.dot(n));
+	} else if ((opts.hoverAssist ?? true) && s.landed && inp.collective <= 0.05) {
 		hover = 0; // engines idle on the ground: the weight rests on the gear and no propellant is burned
 	} else if (opts.hoverAssist ?? true) {
 		const vzCmd = inp.collective * 8;
@@ -181,8 +249,11 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 		hover = (m * aCmd) / Math.max(0.25, up.dot(n));
 	} else hover = spec.thrust.hover * (0.5 + 0.5 * inp.collective);
 	hover = hasFuel ? Math.min(spec.thrust.hover, Math.max(0, hover)) : 0;
-	const mainCmd = inp.forward >= 0 ? inp.forward * spec.thrust.main : inp.forward * spec.thrust.main * RETRO_FRACTION;
+	const mainCmd = flight
+		? (inp.forward < 0 && s.throttle <= 0.001 ? inp.forward * spec.thrust.main * RETRO_FRACTION : s.throttle * spec.thrust.main) // throttle lever; at idle, S swings the thrusters forward to brake
+		: inp.forward >= 0 ? inp.forward * spec.thrust.main * HOVER_MODE_LIMIT(vx) : inp.forward * spec.thrust.main * RETRO_FRACTION; // hover mode is speed-limited (30 → 50 m/s): switch to flight mode to go faster
 	const main = hasFuel ? mainCmd : 0;
+	const brake = flight ? Math.max(0, -inp.collective) * (1 - blend) : 0; // Shift is the airbrake once the wings are carrying the ship
 	const rcs = hasFuel ? inp.strafe * RCS_FORCE : 0;
 	const tpm: Vec3 = [
 		(up.x * hover + fwd.x * main + right.x * rcs) / m,
@@ -193,10 +264,11 @@ function substep(s: EarthState, input: import('./flight').FlightInput, dt: numbe
 	// RK4 on (position, velocity) with thrust and attitude held over the step
 	const p0: Vec3 = [s.pos.x, s.pos.y, s.pos.z], v0: Vec3 = [s.vel.x, s.vel.y, s.vel.z];
 	const add = (a: Vec3, b: Vec3, f: number): Vec3 => [a[0] + b[0] * f, a[1] + b[1] * f, a[2] + b[2] * f];
-	const a1 = accel(p0, v0, tpm, spec, m, opts);
-	const p2 = add(p0, v0, dt / 2), v2 = add(v0, a1, dt / 2), a2 = accel(p2, v2, tpm, spec, m, opts);
-	const p3 = add(p0, v2, dt / 2), v3 = add(v0, a2, dt / 2), a3 = accel(p3, v3, tpm, spec, m, opts);
-	const p4 = add(p0, v3, dt), v4 = add(v0, a3, dt), a4 = accel(p4, v4, tpm, spec, m, opts);
+	const bodyAxes: Body = { fwd: [fwd.x, fwd.y, fwd.z], up: [up.x, up.y, up.z], right: [right.x, right.y, right.z], brake };
+	const a1 = accel(p0, v0, tpm, spec, m, opts, bodyAxes);
+	const p2 = add(p0, v0, dt / 2), v2 = add(v0, a1, dt / 2), a2 = accel(p2, v2, tpm, spec, m, opts, bodyAxes);
+	const p3 = add(p0, v2, dt / 2), v3 = add(v0, a2, dt / 2), a3 = accel(p3, v3, tpm, spec, m, opts, bodyAxes);
+	const p4 = add(p0, v3, dt), v4 = add(v0, a3, dt), a4 = accel(p4, v4, tpm, spec, m, opts, bodyAxes);
 	for (let i = 0; i < 3; i++) {
 		const dp = (dt / 6) * (v0[i] + 2 * v2[i] + 2 * v3[i] + v4[i]);
 		const dv = (dt / 6) * (a1[i] + 2 * a2[i] + 2 * a3[i] + a4[i]);
@@ -257,7 +329,7 @@ function contact(s: EarthState, geo: Geo, ground: number, terrain: TerrainQuery,
 }
 
 export interface EarthTelemetry {
-	hoverN: number; mainN: number;
+	hoverN: number; mainN: number; flightMode: boolean; throttle: number;
 	lat: number; lon: number; altitudeMsl: number; altitudeAgl: number;
 	speed: number; verticalSpeed: number; groundSpeed: number; heading: number; pitch: number;
 	mach: number; q: number; gForce: number; heatFlux: number; fuelFraction: number; mass: number; hover: number; main: number;
@@ -276,7 +348,7 @@ export function earthTelemetry(s: EarthState, terrain: TerrainQuery, spec: ShipS
 	const a = airAt(g.h);
 	const speed = s.vel.length();
 	return {
-		hoverN: s.hover, mainN: s.mainSigned,
+		hoverN: s.hover, mainN: s.mainSigned, flightMode: s.flightMode, throttle: s.throttle,
 		lat: deg(g.lat), lon: deg(g.lon), altitudeMsl: g.h - foot, altitudeAgl: Math.max(0, g.h - foot - gnd),
 		speed, verticalSpeed: vz, groundSpeed: horiz.length(),
 		heading: ((deg(Math.atan2(fwd.dot(E), fwd.dot(N))) % 360) + 360) % 360,

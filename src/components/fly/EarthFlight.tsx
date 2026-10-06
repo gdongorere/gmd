@@ -17,7 +17,7 @@ import { useTouchDevice } from './useLandscape';
 interface Hud {
   lat: number; lon: number; msl: number; agl: number; speed: number; vs: number; heading: number; mach: number; fuel: number; mass: number;
   pressure: number; temperature: number; q: number; heat: number; sunElev: number; utc: string; event: string;
-  terrainReady: number; underfoot: boolean; offline: boolean; imagery: number; tiles: number; buildings: number; estimated: number; buildingsLoading: boolean; buildingsFailed: boolean; space: boolean;
+  terrainReady: number; underfoot: boolean; offline: boolean; imagery: number; tiles: number; buildings: number; estimated: number; buildingsLoading: boolean; buildingsFailed: boolean; space: boolean; flight: boolean; throttle: number;
 }
 const EVENT_TEXT = { landed: 'Landed.', rough: 'Rough landing: slow your descent and level out.', crash: 'Hard impact. Back at your last takeoff point.' } as const;
 
@@ -45,7 +45,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
   const touchInput = useRef<FlightInput>({ ...NO_INPUT });
   const isTouch = useTouchDevice();
   const padActive = useRef(false);
-  const actions = useRef<{ respawn: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
+  const actions = useRef<{ respawn: () => void; flightMode: () => void; view: () => void; teleport: (lat: number, lon: number, hdg: number, alt?: number) => void; timeShift: (h: number | 'now') => void } | null>(null);
 
   usePadFrames(({ pad: p, pressed }) => {
     padActive.current = Math.abs(p.lx) + Math.abs(p.ly) + Math.abs(p.rx) + Math.abs(p.ry) + p.l2 + p.r2 > 0.05 || p.down.l1 || p.down.r1;
@@ -53,6 +53,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
     for (const c of pressed) {
       if (c === 'triangle') actions.current?.view();
       else if (c === 'circle') actions.current?.respawn();
+      else if (c === 'cross') actions.current?.flightMode();
       else if (c === 'options') setHideUi((v) => !v);
     }
   });
@@ -154,6 +155,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         };
         actions.current = {
           respawn: () => teleport(spawnInfo.lat, spawnInfo.lon, spawnInfo.hdg, 0),
+          flightMode: () => { state.flightMode = !state.flightMode; state.throttle = 0; },
           view: () => setView((v) => (v === 'first' ? 'third' : 'first')),
           teleport,
           timeShift: (h) => { timeOffsetMs = h === 'now' ? 0 : timeOffsetMs + h * 3600_000; },
@@ -170,6 +172,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           else if (k === '3') setView('third');
           else if (k === 'r') actions.current?.respawn();
           else if (k === 'i') setHideUi((v) => !v);
+          else if (k === 'c') actions.current?.flightMode();
           else if (k === 'h') setHoverAssist((v) => !v);
           else if (k === '[') actions.current?.timeShift(e.shiftKey ? -6 : -1);
           else if (k === ']') actions.current?.timeShift(e.shiftKey ? 6 : 1);
@@ -303,7 +306,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               fuel: tel.fuelFraction, mass: tel.mass, pressure: tel.air.pressure / 1000, temperature: tel.air.temperature - 273.15, q: tel.q / 1000, heat: tel.heatFlux / 1e4, sunElev,
               utc: now.toISOString().slice(0, 16).replace('T', ' ') + ' UTC', event: t < eventUntil ? eventText : '',
               terrainReady: manager.stats.ready, underfoot: manager.stats.underfootReady && !spawnInfo.pending, offline: manager.stats.offline, imagery: manager.stats.imagery, tiles: manager.stats.displayed,
-              buildings: bs.buildings, estimated: bs.estimatedShare, buildingsLoading: bs.loading, buildingsFailed: bs.failed > 0 && bs.cells === 0, space: tel.inSpace,
+              buildings: bs.buildings, estimated: bs.estimatedShare, buildingsLoading: bs.loading, buildingsFailed: bs.failed > 0 && bs.cells === 0, space: tel.inSpace, flight: tel.flightMode, throttle: tel.throttle,
             });
           }
         };
@@ -349,6 +352,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Button size="xs" variant={view === 'first' ? 'solid' : 'ghost'} aria-pressed={view === 'first'} onClick={() => setView('first')}>First person</Button>
               <Button size="xs" variant={view === 'third' ? 'solid' : 'ghost'} aria-pressed={view === 'third'} onClick={() => setView('third')}>Third person</Button>
             </Flex>}
+            <Button size="sm" variant={hud?.flight ? 'solid' : 'glass'} colorScheme={hud?.flight ? 'orange' : undefined} aria-pressed={!!hud?.flight} onClick={() => actions.current?.flightMode()} data-testid="mode-button">{hud?.flight ? 'Flight mode' : 'Hover mode'}{isTouch ? '' : ' (C)'}</Button>
             <Flex {...glass} px={2} py={1} gap={2} align="center">
               <Select size="xs" w="210px" value={placeId} onChange={(e) => goPlace(e.target.value)} aria-label="Start from a place" data-testid="earth-place">
                 {PLACES.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -361,11 +365,11 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
 
           {!isTouch && <Box {...glass} position="absolute" top={{ base: '130px', md: '60px' }} right={3} p={3} maxW="260px" fontSize="xs" color="content.secondary" data-testid="earth-help">
             <Text fontWeight={700} color="content.primary" mb={1}>Controls</Text>
-            <Text><b>Space / Shift</b> climb / descend · <b>W S</b> thrust / retro · <b>A D</b> strafe</Text>
+            <Text><b>Space / Shift</b> climb / descend (airbrake in flight) · <b>W S</b> thrust / retro (throttle lever in flight) · <b>A D</b> strafe</Text>
             <Text><b>Q E</b> yaw · <b>↑ ↓</b> pitch · <b>← →</b> roll</Text>
-            <Text><b>V</b> view · <b>H</b> hover assist · <b>R</b> back to takeoff · <b>I</b> hide</Text>
+            <Text><b>C</b> hover ⇄ flight mode · <b>V</b> view · <b>H</b> assist · <b>R</b> back to takeoff · <b>I</b> hide</Text>
             <Text><b>[ ]</b> time of day ∓1 h (<b>Shift</b> ∓6 h)</Text>
-            <Text mt={1}>Controller: sticks fly, R2/L2 climb/descend, {buttonName('triangle', 'playstation')} view, {buttonName('circle', 'playstation')} back.</Text>
+            <Text mt={1}>Controller: sticks fly, R2/L2 climb/descend, {buttonName('triangle', 'playstation')} view, {buttonName('cross', 'playstation')} flight mode, {buttonName('circle', 'playstation')} back.</Text>
             <Flex gap={3} mt={2} wrap="wrap">
               <Checkbox size="sm" isChecked={hoverAssist} onChange={(e) => setHoverAssist(e.target.checked)}>Hover assist</Checkbox>
               <Checkbox size="sm" isChecked={levelAssist} onChange={(e) => setLevelAssist(e.target.checked)}>Level assist</Checkbox>
@@ -395,6 +399,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Text>M <b>{fmt(hud?.mach ?? 0, 2)}</b></Text>
               <Text>V/S <b>{fmt(hud?.vs ?? 0, 1)}</b></Text>
               <Text>HDG <b>{fmt(hud?.heading ?? 0)}</b>°</Text>
+              {hud?.flight && <Text>THR <b data-testid="hud-throttle">{fmt(hud.throttle * 100)}</b>%</Text>}
               <Text>FUEL <b>{fmt((hud?.fuel ?? 1) * 100)}</b>%</Text>
             </Flex>
             {!isTouch && <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="xs" color="content.muted" data-testid="earth-air">

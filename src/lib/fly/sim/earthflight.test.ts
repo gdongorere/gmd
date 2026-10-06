@@ -4,7 +4,7 @@ import { EARTH, WGS84, circularSpeed, enuBasis, geodeticToEcef, rad } from '../e
 import { airAt } from '../earth/atmosphere';
 import { KESTREL, terminalSpeed } from '../ships/specs';
 import { NO_INPUT } from './flight';
-import { type EarthState, type TerrainQuery, dragRise, earthTelemetry, geoOf, groundNormal, heatFlux, spawnOnGround, stepEarth, totalMass } from './earthflight';
+import { type EarthState, type TerrainQuery, dragRise, earthTelemetry, geoOf, groundNormal, heatFlux, setAttitude, spawnOnGround, stepEarth, totalMass } from './earthflight';
 
 const sea: TerrainQuery = { height: () => 0 };
 const run = (s: EarthState, secs: number, input = NO_INPUT, terrain: TerrainQuery = sea, opts = {}, dt = 1 / 60) => { for (let t = 0; t < secs - 1e-9; t += dt) stepEarth(s, input, dt, terrain, opts); return s; };
@@ -125,5 +125,72 @@ describe('telemetry', () => {
 		expect(t.lat).toBeCloseTo(47.37, 2); expect(t.lon).toBeCloseTo(8.54, 2);
 		expect(t.heading).toBeCloseTo(90, 0); expect(t.altitudeAgl).toBeLessThan(1); expect(t.inSpace).toBe(false);
 		expect(t.air.pressure).toBeGreaterThan(90000);
+	});
+});
+
+import { AERO, liftCoefficient } from './earthflight';
+import { podTargets } from '../ship/pods';
+
+/** An airborne ship at altitude over the sea, heading east, in hover or flight mode. */
+function airborne(flightMode: boolean, alt = 1500, speed = 0) {
+	const s = spawnOnGround(0, 10, 90, 0);
+	s.pos.set(...geodeticToEcef(0, rad(10), alt)); s.landed = false; s.flightMode = flightMode;
+	if (speed) { const e = enuBasis(0, rad(10)).east; s.vel.set(e[0] * speed, e[1] * speed, e[2] * speed); }
+	return s;
+}
+const alt = (s: EarthState) => geoOf(s.pos).h;
+const podTilt = (s: EarthState) => podTargets({ hoverN: s.hover, mainN: s.mainSigned, yaw: 0, roll: 0 }, 100_000).left;
+
+describe('flight mode (thrusters aft, wings carry the weight)', () => {
+	it('lift curve: linear, symmetric, and it stalls past ~17°', () => {
+		expect(liftCoefficient(0.1)).toBeCloseTo(0.42, 5); expect(liftCoefficient(-0.1)).toBeCloseTo(-0.42, 5);
+		expect(Math.abs(liftCoefficient(0.5))).toBeLessThan(Math.abs(liftCoefficient(0.3))); expect(AERO.S).toBeGreaterThan(0);
+	});
+	it('is much faster than hover mode, the lift engines hand over to the wings, and the pods end up pointing aft', () => {
+		const hover = airborne(false), flight = airborne(true);
+		for (let t = 0; t < 70; t += 1 / 60) {
+			stepEarth(hover, { ...NO_INPUT, forward: 1 }, 1 / 60, sea);
+			stepEarth(flight, { ...NO_INPUT, forward: 1 }, 1 / 60, sea);
+		}
+		const vh = hover.vel.length(), vf = flight.vel.length();
+		expect(vh).toBeLessThan(75); expect(vf).toBeGreaterThan(vh * 1.8); expect(vf).toBeGreaterThan(130);
+		expect(flight.hover).toBeLessThan(5_000); // wings carry it: almost no lift-engine thrust left
+		expect(podTilt(flight)).toBeGreaterThan(1.4); // exhaust swung nearly horizontal, aft
+		expect(Math.abs(podTilt(hover))).toBeLessThan(1.2);
+	});
+	it('holds its altitude on its own while accelerating through the transition (flight assist)', () => {
+		const s = airborne(true, 1500);
+		let minA = 1e9, maxA = -1e9;
+		for (let t = 0; t < 80; t += 1 / 60) { stepEarth(s, { ...NO_INPUT, forward: 1 }, 1 / 60, sea); const a = alt(s); minA = Math.min(minA, a); maxA = Math.max(maxA, a); }
+		expect(minA).toBeGreaterThan(1500 - 220); expect(maxA).toBeLessThan(1500 + 220);
+	});
+	it('the throttle is a lever: W raises it, S lowers it, and it resets in hover mode', () => {
+		const s = airborne(true);
+		for (let t = 0; t < 1; t += 1 / 60) stepEarth(s, { ...NO_INPUT, forward: 1 }, 1 / 60, sea);
+		expect(s.throttle).toBeGreaterThan(0.35); expect(s.throttle).toBeLessThan(0.55);
+		for (let t = 0; t < 3; t += 1 / 60) stepEarth(s, { ...NO_INPUT, forward: -1 }, 1 / 60, sea);
+		expect(s.throttle).toBe(0);
+		s.throttle = 0.8; s.flightMode = false; stepEarth(s, NO_INPUT, 1 / 60, sea); expect(s.throttle).toBe(0);
+	});
+	it('at idle throttle, S swings the thrusters forward to brake', () => {
+		const s = airborne(true, 1500, 90);
+		for (let t = 0; t < 4; t += 1 / 60) stepEarth(s, { ...NO_INPUT, forward: -1 }, 1 / 60, sea);
+		expect(s.mainSigned).toBeLessThan(0); expect(podTilt(s)).toBeLessThan(0);
+	});
+	it('switching back to hover mode at speed keeps flying: the pods drop to point down and the ship slows without falling', () => {
+		const s = airborne(true, 1500, 110);
+		for (let t = 0; t < 6; t += 1 / 60) stepEarth(s, { ...NO_INPUT, forward: 1 }, 1 / 60, sea);
+		s.flightMode = false;
+		let minA = 1e9;
+		for (let t = 0; t < 25; t += 1 / 60) { stepEarth(s, { ...NO_INPUT, forward: -0.3 }, 1 / 60, sea); minA = Math.min(minA, alt(s)); }
+		expect(minA).toBeGreaterThan(1000); expect(s.vel.length()).toBeLessThan(80);
+	});
+	it('the tail stabiliser turns a skewed nose into the airflow (sideslip shrinks)', () => {
+		const s = airborne(true, 1500, 100);
+		setAttitude(s.q, 0, rad(10), rad(90) + 0.35, 0.05); // nose 20° off the flight path
+		const side = () => { const f = new THREE.Vector3(1, 0, 0).applyQuaternion(s.q), r = new THREE.Vector3(0, 0, 1).applyQuaternion(s.q); return Math.abs(Math.atan2(s.vel.dot(r), s.vel.dot(f))); };
+		const before = side();
+		for (let t = 0; t < 6; t += 1 / 60) stepEarth(s, { ...NO_INPUT, forward: 0.5 }, 1 / 60, sea);
+		expect(before).toBeGreaterThan(0.25); expect(side()).toBeLessThan(before * 0.45);
 	});
 });

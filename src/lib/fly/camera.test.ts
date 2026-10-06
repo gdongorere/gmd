@@ -96,3 +96,13 @@ describe('head lean (acceleration-driven)', () => {
 		expect(settle(new CameraRig('first', { comfort: 0 }), 15)).toBeLessThan(1e-6);
 	});
 });
+
+describe('chase camera at speed', () => {
+	it('does not lag further behind a fast ship: the steady-state offset equals the rest offset', () => {
+		const rig = new CameraRig('third');
+		const q = new THREE.Quaternion(), vel = new THREE.Vector3(120, 0, 0), pos = new THREE.Vector3();
+		for (let i = 0; i < 600; i++) { pos.addScaledVector(vel, 1 / 60); rig.update(1 / 60, pos, q, vel); }
+		const rest = chaseTarget(pos, q).distanceTo(pos);
+		expect(rig.pose.pos.distanceTo(pos)).toBeLessThan(rest * 1.15 + 1);
+	});
+});
