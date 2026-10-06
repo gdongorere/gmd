@@ -258,7 +258,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 			root.updateMatrixWorld(true);
 			// Measure the hull only (not the additive plume cones, which are effects).
 			box.makeEmpty();
-			root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry.type !== 'ConeGeometry') box.expandByObject(m); });
+			root.traverse((o) => { const m = o as THREE.Mesh; if (m.isMesh && m.geometry.type !== 'ConeGeometry' && m.parent?.name !== 'lift-plume') box.expandByObject(m); });
 			return { triangles: tri, meshes, size: box.getSize(new THREE.Vector3()), materials: mats.size };
 		},
 		dispose() { owned.forEach((o) => o.dispose()); },
