@@ -60,6 +60,8 @@ export class EarthManager {
 	private buildQueue: { r: Rec; h: HeightTile; synthetic: boolean }[] = [];
 	private activeImages = 0;
 	private lastSelect = -1e9;
+	private lastPump = -1e9;
+	private applyQueue: (() => void)[] = [];
 	private selected: SelectedTile[] = [];
 	private underfoot: TileId[] = [];
 	private underfootKeys = new Set<string>();
@@ -130,8 +132,10 @@ export class EarthManager {
 			this.plan(now);
 		}
 		this.drainBuilds();
+		this.applyQueue.shift()?.();
 		this.show(frame, now);
-		this.pump(now);
+		// Scheduling, eviction and stats scan every resident tile (and sort the wanted ones): 10 Hz is plenty and keeps the frame free on phones.
+		if (now - this.lastPump > 100) { this.lastPump = now; this.pump(now); }
 	}
 
 	// ---------------------------------------------------------------- planning
@@ -241,10 +245,18 @@ export class EarthManager {
 			this.activeImages = Math.max(0, this.activeImages - 1);
 			if (this.disposed || ac.signal.aborted) { if (res && 'close' in res.image) res.image.close(); return; }
 			if (!res || !r.mesh) { r.img = 'failed'; return; }
+			this.applyQueue.push(() => this.applyImage(r, res));
+		}).catch(() => { this.activeImages = Math.max(0, this.activeImages - 1); r.img = 'failed'; });
+	}
+
+	/** Texture creation and the GPU upload that follows are applied one tile per frame, so a burst of arrivals cannot stall a frame. */
+	private applyImage(r: Rec, res: { image: ImageBitmap | HTMLImageElement; tile: TileId }) {
+		if (this.disposed || !r.mesh || this.recs.get(r.key) !== r) { if ('close' in res.image) res.image.close(); return; }
+		{
 			const key = `${tileKey(res.tile)}`;
 			let base = this.textures.get(key);
 			if (!base) {
-				base = new THREE.Texture(res.image as HTMLImageElement); base.colorSpace = THREE.SRGBColorSpace; base.anisotropy = 4; base.generateMipmaps = true; base.minFilter = THREE.LinearMipmapLinearFilter; base.needsUpdate = true;
+				base = new THREE.Texture(res.image as HTMLImageElement); base.colorSpace = THREE.SRGBColorSpace; base.anisotropy = this.opts.cheapMaterials ? 1 : 4; base.generateMipmaps = true; base.minFilter = THREE.LinearMipmapLinearFilter; base.needsUpdate = true;
 				this.tracker.track(base, 'earth', 'texture', 256 * 256 * 4 * 1.33);
 				this.textures.set(key, base);
 			}
@@ -256,7 +268,7 @@ export class EarthManager {
 			mat.vertexColors = false; mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
 			this.tracker.track(mat, 'earth', 'material'); this.tracker.track(tex, 'earth', 'texture');
 			r.mesh.material = mat; r.img = 'done';
-		}).catch(() => { this.activeImages = Math.max(0, this.activeImages - 1); r.img = 'failed'; });
+		}
 	}
 
 	// ---------------------------------------------------------------- display
@@ -321,7 +333,7 @@ export class EarthManager {
 		if (this.disposed) return;
 		this.disposed = true;
 		for (const r of this.recs.values()) { r.abort?.abort(); r.imgAbort?.abort(); }
-		this.recs.clear(); this.textures.clear(); this.buildQueue.length = 0;
+		this.recs.clear(); this.textures.clear(); this.buildQueue.length = 0; this.applyQueue.length = 0;
 		this.tracker.disposeAll();
 		this.root.clear();
 	}
