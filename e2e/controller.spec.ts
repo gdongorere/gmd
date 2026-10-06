@@ -61,9 +61,9 @@ test.describe('controller support', () => {
     // Scrambled layout: left stick is axes 3/2, right stick axes 5/4; buttons follow reverse order.
     const stickAxis: Record<string, [number, number]> = { 'LEFT stick fully to the right': [3, 1], 'LEFT stick fully down': [2, 1], 'RIGHT stick fully to the right': [5, 1], 'RIGHT stick fully down': [4, 1] };
     let buttonIndex = 11;
-    for (let i = 0; i < 22; i++) {
-      const wizard = page.getByTestId('wizard');
-      if (!(await wizard.isVisible())) break;
+    const deadline = Date.now() + 110_000;
+    const wizard = page.getByTestId('wizard');
+    while ((await wizard.isVisible()) && Date.now() < deadline) {
       const prompt = (await page.getByTestId('wizard-prompt').innerText()).trim();
       const stick = Object.entries(stickAxis).find(([k]) => prompt.includes(k));
       let input: FakePad | null = null;
@@ -99,7 +99,7 @@ test.describe('controller support', () => {
     await holdUntil(page, standard(), standard([0]), 18, shown); // ✕
     await expect(page.getByTestId('system3d')).toBeVisible({ timeout: 20_000 });
     await page.waitForTimeout(1500); // let the scene settle before the next press
-    await holdUntil(page, standard(), standard([13]), 18, async () => /Mercury/.test(await page.getByTestId('system3d-readout').innerText().catch(() => ''))); // D-pad down → next body
+    await holdUntil(page, standard(), standard([13]), 18, async () => true); // D-pad down → next body (one press; the readout lags on slow frames)
     await expect(page.getByTestId('system3d-readout')).toContainText(/Mercury/, { timeout: 30_000 });
     await holdUntil(page, standard(), standard([1]), 18, async () => !(await shown())); // ○
     await expect(page.getByTestId('system3d')).toBeHidden({ timeout: 10_000 });

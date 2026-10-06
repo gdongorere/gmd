@@ -26,6 +26,7 @@ export default function ControllerLab() {
   const rest = useRef<RawPad | null>(null);
   const prevAxes = useRef<number[]>([]);
   const stillFrames = useRef(0);
+  const stillSince = useRef(0);
   const lastLive = useRef(0);
   const stepRef = useRef<number | null>(null);
   stepRef.current = step;
@@ -47,14 +48,15 @@ export default function ControllerLab() {
     const changed = axes.some((a, i) => Math.abs(a - (prevAxes.current[i] ?? a)) > 0.05) || raw.buttons.some((b) => b.pressed);
     prevAxes.current = axes;
     if (!armed.current) {
-      stillFrames.current = changed ? 0 : stillFrames.current + 1;
-      if (stillFrames.current >= 8) { rest.current = snapshot(raw); armed.current = true; }
+      // Armed once the pad has been still for a few frames AND a moment of real time (slow devices render few frames per second).
+      if (changed) { stillFrames.current = 0; stillSince.current = now; } else stillFrames.current += 1;
+      if (stillFrames.current >= 3 && now - stillSince.current >= 150) { rest.current = snapshot(raw); armed.current = true; }
       return;
     }
     const b = detectBinding(rest.current!, raw);
     if (!b) return;
     const next = applyLearned(learnedRef.current, LEARN_STEPS[s], b);
-    armed.current = false; stillFrames.current = 0;
+    armed.current = false; stillFrames.current = 0; stillSince.current = now;
     setLearned(next);
     advance(s);
   });
@@ -66,7 +68,7 @@ export default function ControllerLab() {
   }
   function start() {
     if (!pad?.id) return;
-    setLearned(emptyLearned(pad.id)); setStep(0); setSaved(null); armed.current = false; stillFrames.current = 0;
+    setLearned(emptyLearned(pad.id)); setStep(0); setSaved(null); armed.current = false; stillFrames.current = 0; stillSince.current = performance.now();
   }
   function save() {
     if (!learned) return;
