@@ -27,6 +27,9 @@ const SolarView = dynamic(() => import('@/components/solar/SolarView'), { ssr: f
 import { useStarfield } from '@/contexts/StarfieldContext';
 import { galaxyBus } from '@/lib/galaxy/bus';
 import { solarBus } from '@/lib/solar/bus';
+import { usePadFrames, usePadStatus } from '@/components/input/usePad';
+import { padHub } from '@/lib/input/hub';
+import { buttonName, type Control } from '@/lib/input/gamepad';
 import { clonePose, VIEWS, type CameraPose } from '@/lib/galaxy/camera';
 import { decodeView, encodeView, orbit, pan, zoom } from '@/lib/galaxy/explore';
 import { FEATURES, FLY_TO_ORDER, TOUR, featureById, featurePose, type Feature } from '@/lib/galaxy/features';
@@ -52,6 +55,7 @@ const KEYS_HELP: [string, string][] = [
   ['G', 'Galaxy settings'],
   ['?', 'This help'],
   ['Esc', 'Close a card or the tour'],
+  ['Controller (DualShock 4, Xbox…)', 'Left stick orbit · right stick pan and zoom · L2/R2 zoom · ✕ Solar System · ○ back · △ hide interface · □ labels · Options help · D-pad ◀ ▶ step time, ▲ ▼ fly to a place · L1/R1 slower/faster · touchpad take me home. Not working? Open /controller.'],
 ];
 
 const isTyping = (el: EventTarget | null) => {
@@ -244,6 +248,42 @@ export default function ExploreMode() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [help, solar, tourStep, startTour, endTour, showFeature, goTour, bookmarkNow, timeTour, endTimeTour]);
+
+  // --- Controller (DualShock 4 and friends) ----------------------------------------------------------
+  // Buttons are translated into the same keyboard shortcuts so the keyboard and the pad can never disagree; sticks and triggers are analogue.
+  const pad = usePadStatus();
+  const padCursor = useRef(0);
+  const announcedPad = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pad || announcedPad.current === pad.id) return;
+    announcedPad.current = pad.id;
+    toast({
+      title: `${pad.label} connected`,
+      description: pad.source === 'fallback' ? 'This controller reports an unusual layout. Open /controller to teach it once.' : `Left stick orbits. ${buttonName('cross', pad.family)} opens the Solar System. Press Options for help.`,
+      status: 'success', duration: 5000, isClosable: true,
+    });
+    padHub.rumble({ strong: 0.2, weak: 0.6, ms: 120 });
+  }, [pad, toast]);
+  usePadFrames(({ pad: p, pressed, dt }) => {
+    if (help) { if (pressed.includes('circle') || pressed.includes('options')) setHelp(false); return; }
+    const key = (k: string, extra: KeyboardEventInit = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, ...extra }));
+    const map: Partial<Record<Control, string>> = {
+      circle: 'Escape', square: 'l', triangle: 'i', options: '?', share: 'b', l1: '[', r1: ']', left: ',', right: '.', l3: 'j', r3: 'n', touchpad: 'h', ps: 'h',
+    };
+    for (const c of pressed) {
+      if (c === 'cross') key(solar ? 'h' : 'o');
+      else if (c === 'up' || c === 'down') {
+        if (!solar) { padCursor.current = (padCursor.current + (c === 'down' ? 1 : 7)) % 8; key(String(padCursor.current + 1)); }
+      } else if (map[c]) key(map[c]!);
+      if (c === 'cross' || c === 'circle') padHub.rumble({ strong: 0.1, weak: 0.3, ms: 40 });
+    }
+    if (solar) return; // the Solar System view reads the sticks itself
+    const t = target.current;
+    orbit(t, -p.lx * dt * 2.4, p.ly * dt * 1.8);
+    if (p.rx) pan(t, p.rx * dt * 420, 0, window.innerHeight);
+    const z = p.ry + p.l2 - p.r2;
+    if (z) zoom(t, Math.exp(z * dt * 1.5));
+  });
 
   // --- Share and save ---------------------------------------------------------------------
   const share = async () => {

@@ -6,6 +6,7 @@ import { Box, Button, Checkbox, Flex, HStack, Popover, PopoverBody, PopoverConte
 import { FiChevronDown, FiHome, FiPause, FiPlay, FiSkipForward, FiSliders, FiX } from 'react-icons/fi';
 import { simClock } from '@/lib/astro/clock';
 import { solarBus } from '@/lib/solar/bus';
+import { usePadFrames } from '@/components/input/usePad';
 import { LADDER, describeDistance, describeLightTime, nearestStop, EARTH_RADIUS_AU, KM_PER_AU, type LadderStop } from '@/lib/solar/ladder';
 import { BODY_IDS, SolarScene, webglAvailable, type BodyId, type ScreenLabel } from '@/lib/solar/scene';
 
@@ -201,6 +202,23 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
   }, []);
   const interruptRef = useRef(interrupt);
   interruptRef.current = interrupt;
+
+  // --- controller -------------------------------------------------------------------------------------------
+  // Left stick orbits (like dragging), right stick Y and the triggers zoom, ▲ ▼ step through the bodies. ✕ / ○ are handled by the page.
+  usePadFrames(({ pad, pressed, dt, anyInput }) => {
+    const s = sceneRef.current;
+    if (!s || !hud) return;
+    if (anyInput) { activity.current = performance.now(); if (descent && (pad.lx || pad.ly || pad.ry || pad.l2 || pad.r2)) interruptRef.current(); }
+    if (pad.lx || pad.ly) s.orbit(-pad.lx * dt * 2.4, -pad.ly * dt * 2.4);
+    const z = pad.ry + pad.l2 - pad.r2;
+    if (z) s.zoom(Math.exp(z * dt * 1.6));
+    for (const c of pressed) {
+      if (c === 'up' || c === 'down') {
+        const i = BODY_IDS.indexOf(s.displayFocus);
+        fly(BODY_IDS[(i + (c === 'down' ? 1 : BODY_IDS.length - 1)) % BODY_IDS.length]);
+      }
+    }
+  });
 
   // --- readouts --------------------------------------------------------------------------------------
   const stop = nearestStop(focus === 'Earth' || focus === 'Moon' ? 'Earth' : 'Sun', distance);
