@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Button, Checkbox, Flex, HStack, Popover, PopoverBody, PopoverContent, PopoverTrigger, Text, VisuallyHidden } from '@chakra-ui/react';
 import { FiChevronDown, FiHome, FiPause, FiPlay, FiSkipForward, FiSliders, FiX } from 'react-icons/fi';
 import { simClock } from '@/lib/astro/clock';
+import { solarBus } from '@/lib/solar/bus';
+import { usePadFrames } from '@/components/input/usePad';
 import { LADDER, describeDistance, describeLightTime, nearestStop, EARTH_RADIUS_AU, KM_PER_AU, type LadderStop } from '@/lib/solar/ladder';
 import { BODY_IDS, SolarScene, webglAvailable, type BodyId, type ScreenLabel } from '@/lib/solar/scene';
 
@@ -35,7 +37,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
   const pinch = useRef(0);
   const [focus, setFocus] = useState<BodyId>('Sun');
   const [distance, setDistance] = useState(70);
-  const [trueScale, setTrueScale] = useState(false);
+  const [trueScale, setTrueScale] = useState(true);
   const [orbits, setOrbits] = useState(true);
   const [labels, setLabels] = useState(true);
   const [caption, setCaption] = useState('');
@@ -51,6 +53,10 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
   }, [caption]);
   const descentRef = useRef<{ cancelled: boolean } | null>(null);
   const activity = useRef(0);
+  const hudTop = useRef<HTMLDivElement>(null);
+  const hudBottom = useRef<HTMLDivElement>(null);
+  const hudRef = useRef(hud);
+  hudRef.current = hud;
   const poke = () => { activity.current = performance.now(); };
   const opts = useRef({ labels });
   opts.current = { labels };
@@ -77,6 +83,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
     } catch { /* keep the default */ }
     activity.current = performance.now();
     sceneRef.current = scene;
+    solarBus.capture = () => scene.capture();
     void scene.loadTextures().then(() => { activity.current = performance.now(); });
     const fit = () => {
       const r = holder.current!.getBoundingClientRect();
@@ -106,6 +113,13 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
       }
       vslow = dt > 250 && scene.renderer.getPixelRatio() <= RATIOS[RATIOS.length - 1] + 0.01 ? vslow + 1 : Math.max(0, vslow - 2);
       if (vslow > 20 && !fallbackCalled) { fallbackCalled = true; onFallback?.(); }
+      // Keep the scene centred in the free space between the HUD's top menus and its bottom strip.
+      if (frames % 15 === 0) {
+        const h = el.clientHeight;
+        const top = hudTop.current?.getBoundingClientRect().bottom ?? 0;
+        const bottom = hudBottom.current?.getBoundingClientRect().top ?? h;
+        scene.setCentreShift(hudRef.current && top > 0 ? (top + Math.min(bottom, h)) / 2 - h / 2 : 0);
+      }
       const frame = scene.render(simClock().jd());
       setOutOfRange((o) => (o === (frame === null) ? o : frame === null));
       const list = frame ?? [];
@@ -122,7 +136,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
       if (++frames % 6 === 0) { setFocus((f) => (f === scene.displayFocus ? f : scene.displayFocus)); setDistance(scene.focusDistanceAu); }
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); if (descentRef.current) descentRef.current.cancelled = true; scene.dispose(); el.remove(); sceneRef.current = null; };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); if (descentRef.current) descentRef.current.cancelled = true; scene.dispose(); el.remove(); sceneRef.current = null; if (solarBus.capture) solarBus.capture = null; };
   }, [onFallback]);
 
   useEffect(() => { if (sceneRef.current) sceneRef.current.trueScale = trueScale; activity.current = performance.now(); }, [trueScale]);
@@ -189,6 +203,23 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
   const interruptRef = useRef(interrupt);
   interruptRef.current = interrupt;
 
+  // --- controller -------------------------------------------------------------------------------------------
+  // Left stick orbits (like dragging), right stick Y and the triggers zoom, ▲ ▼ step through the bodies. ✕ / ○ are handled by the page.
+  usePadFrames(({ pad, pressed, dt, anyInput }) => {
+    const s = sceneRef.current;
+    if (!s || !hud) return;
+    if (anyInput) { activity.current = performance.now(); if (descent && (pad.lx || pad.ly || pad.ry || pad.l2 || pad.r2)) interruptRef.current(); }
+    if (pad.lx || pad.ly) s.orbit(-pad.lx * dt * 2.4, -pad.ly * dt * 2.4);
+    const z = pad.ry + pad.l2 - pad.r2;
+    if (z) s.zoom(Math.exp(z * dt * 1.6));
+    for (const c of pressed) {
+      if (c === 'up' || c === 'down') {
+        const i = BODY_IDS.indexOf(s.displayFocus);
+        fly(BODY_IDS[(i + (c === 'down' ? 1 : BODY_IDS.length - 1)) % BODY_IDS.length]);
+      }
+    }
+  });
+
   // --- readouts --------------------------------------------------------------------------------------
   const stop = nearestStop(focus === 'Earth' || focus === 'Moon' ? 'Earth' : 'Sun', distance);
   const earthFocus = focus === 'Earth';
@@ -229,7 +260,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
       {hud && (
         <>
           {/* Top left, under the page header: two small menus */}
-          <HStack position="absolute" left={3} top={{ base: '144px', md: '104px' }} spacing={1}>
+          <HStack ref={hudTop} position="absolute" left={3} top={{ base: '144px', md: '104px' }} spacing={1}>
             <Popover isLazy placement="bottom-start">
               <PopoverTrigger><Button {...glass} size="xs" h="28px" rightIcon={<FiChevronDown aria-hidden="true" />} aria-label="Bodies">{focus}</Button></PopoverTrigger>
               <PopoverContent w="auto" bg="surface.raised" borderColor="line.strong" _focusVisible={{ boxShadow: 'none' }}>
@@ -259,7 +290,7 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
           </HStack>
 
           {/* Bottom: one slim strip */}
-          <Flex position="absolute" left={3} right={3} bottom={{ base: '232px', md: '200px' }} direction="column" align="center" gap={1} pointerEvents="none">
+          <Flex ref={hudBottom} position="absolute" left={3} right={3} pl={{ base: '34px', md: 0 }} bottom={{ base: '232px', md: '200px' }} direction="column" align="center" gap={1} pointerEvents="none">
             {showCaption && <Text {...glass} px={3} py={1} fontSize="sm" textAlign="center" maxW="640px" data-testid="descent-caption">{caption}</Text>}
             {chapter && descent && (
               <HStack {...glass} px={2} py={1} spacing={1} wrap="wrap" justify="center" pointerEvents="auto" data-testid="descent-controls" role="group" aria-label="Descent controls">
@@ -278,9 +309,11 @@ export function System3D({ autoDescend = false, hud = true, onFallback }: System
             )}
             <Flex {...glass} px={1} py={1} gap={0.5} align="center" role="group" aria-label="Scale ladder" pointerEvents="auto" maxW="100%" overflowX="auto">
               {LADDER.map((st) => (
-                <Button key={st.id} size="xs" flexShrink={0} variant={stop.id === st.id ? 'solid' : 'ghost'} aria-current={stop.id === st.id ? 'step' : undefined} title={st.hint} onClick={() => goStop(st)}>{st.label}</Button>
+                <Button key={st.id} size="xs" flexShrink={0} variant={stop.id === st.id ? 'solid' : 'ghost'} aria-current={stop.id === st.id ? 'step' : undefined} aria-label={st.label} title={st.hint} onClick={() => goStop(st)}>
+                  <Text as="span" display={{ base: 'none', md: 'inline' }}>{st.label}</Text><Text as="span" display={{ base: 'inline', md: 'none' }} aria-hidden="true">{st.short}</Text>
+                </Button>
               ))}
-              <Button size="xs" flexShrink={0} variant="ghost" colorScheme="blue" leftIcon={<FiHome aria-hidden="true" />} onClick={() => void runDescent(0)}>Take me home</Button>
+              <Button size="xs" flexShrink={0} variant="ghost" colorScheme="blue" aria-label="Take me home" leftIcon={<FiHome aria-hidden="true" />} iconSpacing={{ base: 0, md: 2 }} onClick={() => void runDescent(0)}><Text as="span" display={{ base: 'none', md: 'inline' }}>Take me home</Text></Button>
             </Flex>
             <Text fontSize="2xs" color="content.secondary" textShadow="0 1px 6px #000" aria-live="off">
               <span data-testid="system3d-readout">{info}</span> · <span data-testid="scale-badge">{scaleBadge}</span>
