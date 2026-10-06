@@ -156,6 +156,10 @@ bundle budgets (`/fly` chunk isolated; `/stars` and `/` unchanged within 2 %), `
 
 ---
 
+## Streaming (L-series) tickets
+
+The **L-series** tickets in `docs/fly/12-streaming-and-loading.md` §11 (ResourceTracker and budgets, code splitting, core/detail data split, ResidencyManager and Scheduler, eviction, ephemeris LOD, path prediction, readiness-gated speed tiers, LUT workers, terrain tile streaming, caches, per-world lazy chunks, target warm-up, lazy HUD/map/audio, pressure handling and context-loss recovery, the streaming lens, CI budgets and the soak test) are part of the phases F0–F12 above and carry the same gates: unit tests, `tsc`, lint, build and the phase's e2e subset.
+
 ## Ship-roster tickets
 
 The single-ship tickets above (F3.6, F4.*, F6.8, F9.*) are generalised to three hulls by the **S-series** tickets in `docs/fly/11-ship-roster.md` §7 (ShipSpec data, VesselManager, Kestrel and Meridian models, landing rules per ship, hangar select, launch/dock/switch, HUD variants). **Build order: Kestrel → Wayfarer → Meridian**; first playable milestone = *Kestrel: orbit → Moon landing*.

@@ -657,6 +657,8 @@ Titan (haze, lakes, dense air flight), Io/Europa/Ganymede/Callisto, Uranus/Neptu
 
 **F11 — Polish, performance, reality (L).** Tier tuning on real devices (needs Gee's phone/PC feedback), memory budgets, load-time streaming, save/load, missions and sites (§14), reality panel text, OG image, docs.
 
+**Streaming (L-series) is woven through the phases rather than a separate phase:** `ResourceTracker`, budgets and code-splitting rules from F0; `ResidencyManager`/`Scheduler` and the core/detail split of `bodies.ts` in F1; ephemeris LOD in F2; prediction and readiness-gated tiers in F3; LUT workers in F5; terrain tile streaming and caches in F6; per-world lazy chunks and target warm-up in F7; lazy HUD/map in F9; context-loss recovery and the streaming lens in F11; CI budgets and the soak test in F12. The ticket list is `docs/fly/12-streaming-and-loading.md` §11.
+
 **F12 — Release (S).** Full CI-equivalent: `tsc`, `eslint src`, `vitest`, `next build` with Sanity vars unset, Playwright desktop + mobile, bundle-size check (the `/fly` chunk
 must not enlarge `/stars` or the home page). Ask Gee whether to open a PR (use the repo PR template if present).
 

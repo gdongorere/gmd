@@ -58,6 +58,10 @@ software renderers, relative (not absolute) performance checks, and generous tim
 | A11y | axe on HUD, menus, reality panel, pause menu | `@axe-core/playwright` |
 | Perf smoke | frame time relative to a baseline run on the same machine; memory growth < 15 % over 60 s | not absolute fps |
 
+### 2b. Streaming tests
+
+The residency, scheduler, eviction, tile-coverage, prediction, readiness-coupling, leak, network-budget, cache, context-loss and mobile-profile tests are specified in `docs/fly/12-streaming-and-loading.md` §12 and run in the same CI stages (unit in Vitest; network, leak/soak and context-loss in Playwright against a production build).
+
 ## 3. Visual regression (curated)
 
 Screenshots of: Earth orbit (day and night), Moon pad, Mars sky at noon and sunset, Venus deck, Jupiter bands with GRS, Saturn rings from the ring plane, Titan

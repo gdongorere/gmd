@@ -189,6 +189,10 @@ with a **terrain scan** (3×3 grid ahead of the descent path, flatness metric `�
 `state.ts` stores a versioned JSON `{ v, bodyId, state, tier, fuel, damage, settings, dateMode }` in `localStorage` (**every access wrapped in try/catch**; the page must work with storage blocked). Validation on load rejects non-finite numbers
 (same lesson as `?t=` and bookmarks). A **share link** carries only coarse state (body, altitude band, date as a Julian Date, tier) — never the whole save.
 
+## 11b. Streaming contracts
+
+`BodyData` is split: `BodyCore` (id, kind, parent, radius, gm, rotation, orbit source, colour; ≤ 15 KB for the whole table; always resident) and `BodyDetail` (atmosphere, wind, deck, surface, sky, palette, landmarks, hazards; a lazy chunk per body). All load/evict logic follows `docs/fly/12-streaming-and-loading.md`: `Streamable { id, kind, bytes, deps, load(signal), unload(), priority(ctx), hysteresis }`, `priority = interest × urgency ÷ (1 + bytes/bytes_ref)`, eviction by hysteresis + grace + cost-aware LRU, and the tier controller's `v_max = min(tier.cap, bubbleCap, R_ready/T_load)`.
+
 ## 12. Determinism and reproducibility rules
 
 All random content derives from `hash(bodyId, seedDate, tileId, featureId)` with a documented integer hash; no `Date.now()` or `Math.random()` inside generators. Ephemeris queries take an explicit JD. This makes screenshots, e2e and bug reports reproducible.

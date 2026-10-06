@@ -75,6 +75,10 @@ The HUD has three variants over the same data (see `11-ship-roster.md` §6): **c
 | **Warnings** | top-centre pill | caution (amber), warning (red) | always with an action: "Pitch up", "Slow down", "Climb" |
 | **Recall card** | modal with what happened, keep/restore buttons | after damage > 120 % | "The ship was recalled to orbit. At 1.4 bar and 2,300 K the hull exceeded its rating." |
 
+## 4b. Streaming feedback in the HUD
+
+"Slowing for Mars" doubles as "streaming ahead" (speed tiers are readiness-gated, `12-streaming-and-loading.md` §7). A tiny progress hint ("Mars surface 82 %") appears only if a wait exceeds 1.5 s; there is never a blocking loading screen in flight. The streaming lens (`F4`) is a dev/debug overlay and a "Show streaming" setting.
+
 ## 5. Interaction details
 
 - **Pop-overs** (`Bodies`, `View`) are lazy, keyboard-navigable, with a close-on-outside-click and Esc.

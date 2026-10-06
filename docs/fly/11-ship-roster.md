@@ -54,6 +54,8 @@ and need serious thrust to arrest a descent on Mars (390–480 m/s terminal: exa
 
 ---
 
+> **Loading:** only the selected hull is resident in the hangar and only the active hull in flight; a second hull is loaded when it is docked or within the ~2.5 km physics range (`12-streaming-and-loading.md` §3). The Kestrel is generated in code, so selecting it downloads nothing.
+
 ## 2. Flight-model differences (one engine, different data)
 
 All ships run through the **same** `integrator`, `aero`, `thermal`, `contact` and `atmosphere` modules (`09-physicality-charter.md` rule 6). They differ only by `ShipSpec` data and a few
