@@ -53,9 +53,9 @@ export interface FlightOptions {
 
 /** Feet below the origin with the gear out / folded (the belly rests on the ground when folded). */
 export const FOOT_OFFSET = { down: 2.03, up: 1.3 };
-const MAX_RATE = { yaw: 1.1, pitch: 0.9, roll: 1.2 };
-const RETRO_FRACTION = 0.3;
-const RCS_FORCE = 20_000;
+export const MAX_RATE = { yaw: 1.1, pitch: 0.9, roll: 1.2 };
+export const RETRO_FRACTION = 0.3;
+export const RCS_FORCE = 20_000;
 
 export const airDensity = (altitude: number) => 1.225 * Math.exp(-Math.max(0, altitude) / 8500);
 

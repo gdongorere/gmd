@@ -28,7 +28,8 @@ export interface AirState { temperature: number; pressure: number; density: numb
 
 /** Atmosphere at geometric altitude z (m above mean sea level). Negative altitudes (Dead Sea, Death Valley) use the first layer. */
 export function airAt(z: number): AirState {
-	const hz = geopotential(Math.min(Math.max(z, -5000), 150000));
+	const zc = Math.min(Math.max(z, -5000), 150000);
+	const hz = geopotential(zc);
 	let T: number, P: number;
 	if (hz <= TOP) {
 		let i = layers.length - 1;
@@ -44,6 +45,9 @@ export function airAt(z: number): AirState {
 		T = T86;
 		P = P86 * Math.exp((-G0 * (hz - TOP)) / (R_AIR * T86));
 	}
+	// Above 150 km the thermosphere thins with a ~45 km scale height (400 km ≈ 8e-12 kg/m³, the right order for the ISS altitude).
+	const fade = z > 150000 ? Math.exp(-(z - 150000) / 45000) : 1;
+	P *= fade;
 	return { temperature: T, pressure: P, density: P / (R_AIR * T), speedOfSound: Math.sqrt(GAMMA * R_AIR * T) };
 }
 
