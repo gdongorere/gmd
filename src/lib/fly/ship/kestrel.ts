@@ -164,13 +164,9 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	const cockpit = new THREE.Group(); cockpit.name = 'cockpit'; cockpit.position.set(3.4, 0.45, 0); root.add(cockpit);
 	const R = 1.35;
 	addMesh(cockpit, new THREE.SphereGeometry(R, seg, Math.round(seg * 0.6)), glass, 'canopy');
-	const tube = 0.032;
+	// Clean glass: no metal bands across the bubble. One thick white oval frame rims the front opening, as in the reference.
 	const frame = new THREE.Group(); frame.name = 'frame'; cockpit.add(frame);
-	const ringAt = (rx: number, ry: number, rz: number) => { const r = addMesh(frame, new THREE.TorusGeometry(R * 1.003, tube, 8, seg * 2), graphite, 'frame-ring'); r.rotation.set(rx, ry, rz); r.castShadow = false; return r; };
-	ringAt(Math.PI / 2, 0, 0); // equator
-	ringAt(0, 0, 0); // vertical, across the span
-	ringAt(0, Math.PI / 2, 0); // vertical, fore-aft
-	ringAt(Math.PI / 2.6, Math.PI / 5, 0); // a tilted ring for the gyroscope look
+	const rim = addMesh(frame, new THREE.TorusGeometry(R * 0.74, 0.09, 14, seg * 2), ceramic, 'frame-ring'); rim.position.x = R * 0.58; rim.rotation.y = Math.PI / 2; rim.scale.set(1, 1.06, 1); // faces forward
 	// cradle: dark structure joining the sphere to the spine
 	addMesh(cockpit, new THREE.CylinderGeometry(0.5, 0.7, 0.55, 20), graphite, 'cradle').position.set(-0.55, -0.95, 0);
 	const strut = addMesh(cockpit, new THREE.BoxGeometry(1.6, 0.22, 0.36), graphite, 'cradle-beam'); strut.position.set(-1.1, -0.55, 0);
@@ -210,7 +206,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 	interface Leg { hip: THREE.Group; knee: THREE.Group }
 	const legs: Leg[] = [];
 	// [fore/aft side (+1 forward), lateral side, upper length, lower length]; the feet sit ≈ 2 m under the spine with the gear out.
-	const legSpec: [number, number, number, number][] = [[1, 1, 0.82, 0.64], [1, -1, 0.82, 0.64], [-1, 1, 0.82, 0.64], [-1, -1, 0.82, 0.64]];
+	const legSpec: [number, number, number, number][] = [[1, 1, 0.9, 0.7], [1, -1, 0.9, 0.7], [-1, 1, 0.9, 0.7], [-1, -1, 0.9, 0.7]];
 	legSpec.forEach(([fa, side, up, low], i) => {
 		const hip = new THREE.Group(); hip.name = `leg-${i}`;
 		hip.position.set(1.45 + fa * 0.12, -0.7, side * 0.12); root.add(hip);
@@ -218,8 +214,9 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		const knee = new THREE.Group(); knee.position.y = -up; hip.add(knee);
 		addMesh(knee, new THREE.SphereGeometry(0.095, 12, 8), graphite, 'leg-knee');
 		const lower = addMesh(knee, new THREE.CylinderGeometry(0.04, 0.06, low, 10), steel, 'leg-lower'); lower.position.y = -low / 2;
-		const pad = addMesh(knee, new THREE.BoxGeometry(0.5, 0.05, 0.28), graphite, 'leg-pad'); pad.position.y = -low - 0.02;
-		hip.rotation.z = -fa * 0.55; // splay fore and aft
+		const pad = addMesh(knee, new THREE.BoxGeometry(1.0, 0.06, 0.24), ceramic, 'leg-pad'); pad.position.y = -low - 0.02; // a long skid
+		const toe = addMesh(knee, new THREE.BoxGeometry(0.3, 0.06, 0.24), ceramic, 'leg-toe'); toe.position.set(0.58, -low + 0.03, 0); toe.rotation.z = 0.5; // upturned front
+		hip.rotation.z = -fa * 0.7; // splay fore and aft
 		legs.push({ hip, knee });
 	});
 
@@ -239,7 +236,7 @@ export function buildKestrel(opts: KestrelOptions = {}): KestrelModel {
 		(tailPlume.material as THREE.MeshBasicMaterial).opacity = 0.4 * thrust * cruise;
 		turbine.rotation.y = (Math.PI / 2) * cruise; // 0: axis along Z (side-facing); 1: axis along X, plume aft
 		// Legs fold up and inwards as `gear` goes 1 → 0.
-		legs.forEach((l, i) => { const side = i % 2 === 0 ? 1 : -1; const f = 1 - gear; l.hip.rotation.x = side * (-0.42 - f * 1.0); l.knee.rotation.x = side * f * 1.9; });
+		legs.forEach((l, i) => { const side = i % 2 === 0 ? 1 : -1; const f = 1 - gear; l.hip.rotation.x = side * (-0.62 - f * 0.8); l.knee.rotation.x = side * f * 1.9; });
 	};
 	apply();
 
