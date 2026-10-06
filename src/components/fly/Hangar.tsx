@@ -101,10 +101,10 @@ export default function Hangar({ onFly, onEarth }: { onFly?: () => void; onEarth
           // Ease the controls so the parts move like machinery, not like a slider.
           const k = 1 - Math.exp(-dt * 4);
           clock.gear += ((s.gear ? 1 : 0) - clock.gear) * k; clock.thrust += (s.thrust - clock.thrust) * k; clock.cruise += (s.cruise - clock.cruise) * k;
-          model.setGear(clock.gear); model.setThrust(clock.thrust); model.setCruise(clock.cruise); model.setLights(s.lights);
+          model.setGear(clock.gear); model.setPods({ left: clock.cruise * 1.6, right: clock.cruise * 1.6, thrustLeft: clock.thrust, thrustRight: clock.thrust }); model.setLights(s.lights);
           model.update(dt);
           // Hover bob proportional to thrust, so the craft rises off the pad as the lift ring comes up.
-          model.root.position.y = 0.9 * clock.thrust * (1 - clock.cruise) + Math.sin(t / 900) * 0.03 * clock.thrust;
+          model.root.position.y = 0.9 * clock.thrust * Math.cos(clock.cruise * 1.6) + Math.sin(t / 900) * 0.03 * clock.thrust;
           if (s.spin) { model.root.rotation.y += dt * 0.25; idleAt = t; }
           void idleAt;
           controls.update();
@@ -167,8 +167,8 @@ export default function Hangar({ onFly, onEarth }: { onFly?: () => void; onEarth
             </Slider>
           </Flex>
           <Flex direction="column" w={{ base: '130px', md: '170px' }}>
-            <Text fontSize="xs" color="content.muted">Tail turbine: hover → cruise</Text>
-            <Slider aria-label="Tail turbine angle" min={0} max={1} step={0.01} value={cruise} onChange={setCruise} focusThumbOnChange={false}>
+            <Text fontSize="xs" color="content.muted">Engine pods: down (hover) → aft (forward thrust)</Text>
+            <Slider aria-label="Engine pod tilt" min={0} max={1} step={0.01} value={cruise} onChange={setCruise} focusThumbOnChange={false}>
               <SliderTrack><SliderFilledTrack /></SliderTrack><SliderThumb />
             </Slider>
           </Flex>
