@@ -14,6 +14,10 @@ export const profile = {
   siteUrl:
     process.env.NEXT_PUBLIC_SITE_URL ??
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'http://localhost:3000'),
+  /** The main portfolio's real address - deliberately NOT derived from siteUrl/VERCEL_PROJECT_PRODUCTION_URL, since
+   *  a standalone /fly deployment (docs/plan-fly-standalone-deploy.md) runs under its own domain and needs a fixed
+   *  link back to the main site, not a link to itself. */
+  portfolioUrl: 'https://godliness.vercel.app',
   email: 'godlinessdongorere@gmail.com',
   phone: '+268 7934 2380',
   phoneHref: 'tel:+26879342380',

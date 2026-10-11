@@ -8,6 +8,7 @@ import Hangar from './Hangar';
 import FlightArena from './FlightArena';
 import EarthFlight from './EarthFlight';
 import { useLandscape, useTouchDevice } from './useLandscape';
+import { profile } from '@/data/profile';
 
 type Mode = 'hangar' | 'arena' | 'earth';
 
@@ -71,6 +72,18 @@ export default function FlyApp() {
         top="10px" right="10px" minW="32px" h="32px" borderRadius="full"
         opacity={awake ? 0.75 : 0} pointerEvents={awake ? 'auto' : 'none'} transition="opacity 0.4s" _hover={{ opacity: 1 }} _focusVisible={{ opacity: 1, pointerEvents: 'auto' }}
       />
+      {/* Only on the standalone /fly deployment (docs/plan-fly-standalone-deploy.md) - on the main portfolio
+          itself, a "back to my site" link while already on the site would be redundant. */}
+      {process.env.NEXT_PUBLIC_FLY_STANDALONE === '1' && (
+        <Button
+          as="a" href={profile.portfolioUrl} variant="glass" size="sm"
+          position="fixed" zIndex={30} bottom="10px" right="10px" fontWeight={500}
+          opacity={awake ? 0.75 : 0} pointerEvents={awake ? 'auto' : 'none'} transition="opacity 0.4s" _hover={{ opacity: 1 }} _focusVisible={{ opacity: 1, pointerEvents: 'auto' }}
+          data-testid="fly-portfolio-link"
+        >
+          {profile.name} →
+        </Button>
+      )}
       {isTouch && portrait && (
         <Flex position="fixed" inset={0} zIndex={2000} bg="rgba(8,10,20,0.97)" direction="column" align="center" justify="center" gap={4} px={8} textAlign="center" data-testid="rotate-overlay">
           <Text fontSize="4xl" aria-hidden="true">⟳</Text>
