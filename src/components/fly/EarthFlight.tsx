@@ -1,23 +1,35 @@
 // src/components/fly/EarthFlight.tsx
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Checkbox, Flex, HStack, Input, Select, Text, VisuallyHidden } from '@chakra-ui/react';
-import { FiArrowLeft } from 'react-icons/fi';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { Box, Button, Checkbox, Flex, HStack, Input, Select, Slider, SliderFilledTrack, SliderThumb, SliderTrack, Stack, Text, VisuallyHidden } from '@chakra-ui/react';
+import { FiArrowLeft, FiPause } from 'react-icons/fi';
 import { usePadFrames } from '@/components/input/usePad';
 import { buttonName } from '@/lib/input/gamepad';
+import { padHub } from '@/lib/input/hub';
 import { CameraRig, type ViewMode } from '@/lib/fly/camera';
 import { podTargets } from '@/lib/fly/ship/pods';
 import { KESTREL, KESTREL_FAST } from '@/lib/fly/ships/specs';
 import { NO_INPUT, type FlightInput } from '@/lib/fly/sim/flight';
 import { PLACES, placeById } from '@/lib/fly/earth/places';
+import { trailDistanceDeg } from '@/lib/fly/earth/geo';
+import { loadSettings, resolveReducedMotion, updateSettings } from '@/lib/fly/settings';
+import { computeWarnings } from '@/lib/fly/warnings';
+import { ONBOARDING_DONE, ONBOARDING_STEPS, ONBOARDING_STEPS_TOUCH, nextOnboardingStep } from '@/lib/fly/onboarding';
+import { FlightAudio } from '@/lib/fly/audio';
+import { type FlightLogEntry, appendLogEntry, loadLog, nearestPlace } from '@/lib/fly/log';
+import { type Badge, computeBadges, loadAchievements, recordLanding, recordTick } from '@/lib/fly/achievements';
 import TouchControls from './TouchControls';
 import { useTouchDevice } from './useLandscape';
+import PlaceSearch from './PlaceSearch';
+
+const Minimap = dynamic(() => import('./Minimap'), { ssr: false });
 
 interface Hud {
   lat: number; lon: number; msl: number; agl: number; speed: number; vs: number; heading: number; mach: number; fuel: number; mass: number;
   pressure: number; temperature: number; q: number; heat: number; sunElev: number; utc: string; event: string;
-  terrainReady: number; underfoot: boolean; offline: boolean; imagery: number; tiles: number; buildings: number; estimated: number; buildingsLoading: boolean; buildingsFailed: boolean; space: boolean; flight: boolean; throttle: number; pitch: number; warp: number; warpMax: number; ap: number | null; pe: number; vOrb: number; vCirc: number; inOrbit: boolean;
+  terrainReady: number; underfoot: boolean; offline: boolean; imagery: number; tiles: number; buildings: number; estimated: number; buildingsLoading: boolean; buildingsFailed: boolean; space: boolean; flight: boolean; throttle: number; pitch: number; warp: number; warpMax: number; ap: number | null; pe: number; vOrb: number; vCirc: number; inOrbit: boolean; gForce: number;
 }
 const EVENT_TEXT = { landed: 'Landed.', rough: 'Rough landing: slow your descent and level out.', crash: 'Hard impact. Back at your last takeoff point.' } as const;
 
@@ -28,11 +40,39 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
   const [view, setView] = useState<ViewMode>('third');
   const [hud, setHud] = useState<Hud | null>(null);
   const [hideUi, setHideUi] = useState(false);
-  const [hoverAssist, setHoverAssist] = useState(true);
-  const [levelAssist, setLevelAssist] = useState(true);
-  const [buildingsOn, setBuildingsOn] = useState(true);
-  const [imageryOn, setImageryOn] = useState(true);
-  const [labelsOn, setLabelsOn] = useState(false);
+  // Initial values come from the last saved settings (docs/plan-fly-game-ux.md Phase 1); the lazy initializer runs
+  // once, before paint, so there's no flash of the hard-coded defaults before a saved preference "jumps in" later.
+  const [settings] = useState(loadSettings);
+  const [hoverAssist, setHoverAssist] = useState(settings.hoverAssist);
+  const [levelAssist, setLevelAssist] = useState(settings.levelAssist);
+  const [buildingsOn, setBuildingsOn] = useState(settings.buildingsOn);
+  const [imageryOn, setImageryOn] = useState(settings.imageryOn);
+  const [labelsOn, setLabelsOn] = useState(settings.labelsOn);
+  const [minimapOn, setMinimapOn] = useState(settings.minimapOn);
+  const [reducedMotionPref, setReducedMotionPref] = useState(settings.reducedMotion);
+  const [reality, setReality] = useState(settings.reality);
+  const [audioMuted, setAudioMuted] = useState(settings.audioMuted);
+  const [audioVolume, setAudioVolume] = useState(settings.audioVolume);
+  const [photoMode, setPhotoMode] = useState(false);
+  const [photoFov, setPhotoFov] = useState(0); // 0 = use the view's normal FOV
+  const [onboardingStep, setOnboardingStep] = useState(settings.firstFlightDone ? ONBOARDING_DONE : 0);
+  const viewSwitchedRef = useRef(false);
+  const finalStepShownAtRef = useRef<number | null>(null);
+  const [logbookOpen, setLogbookOpen] = useState(false);
+  const [logEntries, setLogEntries] = useState<FlightLogEntry[]>([]);
+  const [badges, setBadges] = useState<Badge[]>([]);
+  const openLogbook = () => { setLogEntries(loadLog().slice().reverse()); setBadges(computeBadges(loadAchievements())); setLogbookOpen(true); };
+  const [paused, setPaused] = useState(false);
+  const [crashInfo, setCrashInfo] = useState<{ speed: number; maxVz: number } | null>(null);
+  const [trail, setTrail] = useState<[number, number][]>([]);
+
+  // Persist every toggle on change, in one place, rather than an updateSettings() call scattered across six
+  // onChange handlers. Skips the very first render (nothing changed yet - it's exactly what was just loaded).
+  const firstPersist = useRef(true);
+  useEffect(() => {
+    if (firstPersist.current) { firstPersist.current = false; return; }
+    updateSettings({ hoverAssist, levelAssist, buildingsOn, imageryOn, labelsOn, minimapOn, reducedMotion: reducedMotionPref, reality, audioMuted, audioVolume });
+  }, [hoverAssist, levelAssist, buildingsOn, imageryOn, labelsOn, minimapOn, reducedMotionPref, reality, audioMuted, audioVolume]);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [placeId, setPlaceId] = useState('zurich');
@@ -73,8 +113,9 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
     window.addEventListener('pointermove', wake); window.addEventListener('pointerdown', wake);
     return () => { window.clearTimeout(t); window.removeEventListener('pointermove', wake); window.removeEventListener('pointerdown', wake); };
   }, []);
-  const flags = useRef({ view, hoverAssist, levelAssist, buildingsOn, imageryOn, labelsOn });
-  flags.current = { view, hoverAssist, levelAssist, buildingsOn, imageryOn, labelsOn };
+  const crashed = crashInfo !== null;
+  const flags = useRef({ view, hoverAssist, levelAssist, buildingsOn, imageryOn, labelsOn, paused, reducedMotionPref, crashed, audioMuted, audioVolume, photoMode, photoFov });
+  flags.current = { view, hoverAssist, levelAssist, buildingsOn, imageryOn, labelsOn, paused, reducedMotionPref, crashed, audioMuted, audioVolume, photoMode, photoFov };
   const keys = useRef(new Set<string>());
   const pad = useRef<FlightInput>({ ...NO_INPUT });
   const touchInput = useRef<FlightInput>({ ...NO_INPUT });
@@ -178,6 +219,9 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         scene.add(buildings.root);
 
         const dust = new Dust(); scene.add(dust.points);
+        const audio = new FlightAudio();
+        const resumeAudio = () => audio.resume();
+        window.addEventListener('pointerdown', resumeAudio); window.addEventListener('keydown', resumeAudio);
         const model = buildKestrel({ glass: lowQ ? 'simple' : 'physical', detail: lowQ ? 24 : 56, cheap: lowQ });
         model.root.traverse((o) => { if ((o as import('three').Mesh).isMesh) (o as import('three').Mesh).castShadow = true; });
         scene.add(model.root);
@@ -203,6 +247,8 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           Object.assign(state, sim.spawnOnGround(lat, lon, hdg, 0, ship));
           frame.setAnchor([state.pos.x, state.pos.y, state.pos.z]);
           rig.snap(); gearDown = true; gearPos = 1;
+          trailBuf.length = 0; setTrail([]); // a new takeoff starts a new trail, not a line across the globe from wherever the last one ended
+          flightStartMs = performance.now(); // the logbook's flight-time field (docs/plan-fly-game-ux.md §4) counts from here
         };
         actions.current = {
           respawn: () => teleport(spawnInfo.lat, spawnInfo.lon, spawnInfo.hdg, 0),
@@ -231,6 +277,9 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           else if (k === '.' || k === '>') actions.current?.warp(1);
           else if (k === ',' || k === '<') actions.current?.warp(-1);
           else if (k === 'h') setHoverAssist((v) => !v);
+          else if (k === 'm') setMinimapOn((v) => !v);
+          else if (k === 'Escape') setPaused((v) => !v);
+          else if (k === 'p') { setPhotoMode((v) => !v); setPhotoFov(0); }
           else if (k === '[') actions.current?.timeShift(e.shiftKey ? -6 : -1);
           else if (k === ']') actions.current?.timeShift(e.shiftKey ? 6 : 1);
           else if (k === '{') actions.current?.timeShift(-6);
@@ -252,7 +301,8 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         let warpMax = 1;
         let lastTel: ReturnType<typeof sim.earthTelemetry> | null = null;
         let emaDt = 0.02, govAt = 0, calmSince = 0, lastDown = -1e9, gearPos = 1, gearDown = true;
-        let lastView: ViewMode = 'third', eventText = '', eventUntil = 0, raf = 0, last = performance.now(), hudAt = 0;
+        let lastView: ViewMode = 'third', eventText = '', eventUntil = 0, raf = 0, last = performance.now(), hudAt = 0, flightStartMs = performance.now();
+        const trailBuf: [number, number][] = []; // flight trail (docs/plan-fly-map-data.md §3): bounded ring buffer, synced to React state on each HUD tick
         const rd = (n: number, d = 0) => Number(n.toFixed(d));
 
         const loop = (t: number) => {
@@ -271,6 +321,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             else if (emaDt >= 0.021) calmSince = t;
           }
           manager.imageryEnabled = f.imageryOn; buildings.enabled = f.buildingsOn; labelsOnRef.current = f.labelsOn;
+          rig.reducedMotion = resolveReducedMotion(f.reducedMotionPref);
 
           const kin = keyboardInput(), pin = pad.current;
           const tin = touchInput.current;
@@ -293,15 +344,12 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             warpMax = allowed;
             if (warpNow > 1) timeOffsetMs += dt * 1000 * (warpNow - 1); // the day and night pass at the same pace
           }
-          if (!spawnInfo.pending) {
+          if (!spawnInfo.pending && !f.paused && !f.crashed && !f.photoMode) {
             // Sub-steps proportional to the real frame time (never a fixed 1/60 s quantum): the ship then moves smoothly whatever the frame rate, instead of 1, 2 or 3 steps per frame.
             const n = Math.min(6, Math.max(1, Math.ceil(dt * 60 - 1e-6)));
             for (let i = 0; i < n; i++) sim.stepEarth(state, input, (dt / n) * warpNow, manager.terrain, { hoverAssist: f.hoverAssist, levelAssist: f.levelAssist, spec: ship });
           }
-          if (state.event) {
-            eventText = EVENT_TEXT[state.event.kind]; eventUntil = t + 4500;
-            if (state.event.kind === 'crash') actions.current?.respawn(); else state.event = null;
-          }
+          const pendingEvent = state.event; // read before telemetry (below) so logging has both; cleared once tel exists
 
           // Re-base the render frame near the ship.
           if (frame.needsRebase(state.pos)) {
@@ -312,6 +360,23 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
 
           frame.toLocal(state.pos, shipLocal); frame.quatToLocal(state.q, qLocal); frame.dirToLocal(state.vel, velLocal);
           const tel = sim.earthTelemetry(state, manager.terrain, ship); lastTel = tel;
+          if (pendingEvent) {
+            // Logbook + badges (docs/plan-fly-game-ux.md §4): every field here is a number the sim already
+            // computed for this touchdown - no separate scoring system.
+            const place = nearestPlace(tel.lat, tel.lon, PLACES);
+            appendLogEntry({ date: new Date().toISOString(), kind: pendingEvent.kind, touchdownSpeed: pendingEvent.speed, fuelUsedFraction: 1 - tel.fuelFraction, distanceKm: trailDistanceDeg(trailBuf) / 1000, flightTimeS: (t - flightStartMs) / 1000, place });
+            if (pendingEvent.kind !== 'crash') recordLanding(place);
+            if (pendingEvent.kind === 'crash') {
+              // A recall card (below) explains what happened and waits for the pilot to dismiss it, instead of the
+              // old silent instant respawn - the physics step is gated on f.crashed above, so the ship holds still.
+              setCrashInfo({ speed: pendingEvent.speed, maxVz: ship.landing.maxVz });
+            } else { eventText = EVENT_TEXT[pendingEvent.kind]; eventUntil = t + 4500; }
+            audio.touchdown(pendingEvent.speed, ship.landing.maxVz);
+            const severity = Math.min(1, pendingEvent.speed / ship.landing.maxVz);
+            padHub.rumble({ strong: severity, weak: severity * 0.6, ms: 180 + 220 * severity });
+            navigator.vibrate?.(Math.round(100 + 150 * severity)); // the same real impact severity, for touch devices without a gamepad
+            state.event = null;
+          }
           model.root.position.copy(shipLocal); model.root.quaternion.copy(qLocal);
           // Automatic landing gear: down below 15 m above the ground, up (and hidden) above 30 m.
           if (gearDown && tel.altitudeAgl > 30) gearDown = false; else if (!gearDown && tel.altitudeAgl < 15) gearDown = true;
@@ -325,9 +390,10 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             dust.update(dt, shipLocal, qLocal, groundY, Math.max(tel.hover, tel.main * 0.5), tel.altitudeAgl, tel.altitudeMsl - tel.altitudeAgl <= 1, Math.min(1, 0.25 + 0.75 * Math.max(0, Math.sin((lit.sunElevation * Math.PI) / 180))));
           }
           if (f.view !== lastView) { rig.setMode(f.view); lastView = f.view; model.setFirstPerson(f.view === 'first'); }
-          rig.update(dt, shipLocal, qLocal, velLocal);
+          rig.update(dt, shipLocal, qLocal, velLocal, tel.q, tel.gForce);
           camera.position.copy(rig.pose.pos); camera.quaternion.copy(rig.pose.quat);
-          if (Math.abs(camera.fov - rig.fov) > 0.01) { camera.fov = rig.fov; camera.near = f.view === 'first' ? 0.05 : 0.3; camera.updateProjectionMatrix(); }
+          const targetFov = f.photoMode && f.photoFov > 0 ? f.photoFov : rig.fov;
+          if (Math.abs(camera.fov - targetFov) > 0.01) { camera.fov = targetFov; camera.near = f.view === 'first' ? 0.05 : 0.3; camera.updateProjectionMatrix(); }
           if (!renderer.capabilities.logarithmicDepthBuffer) {
             // Standard depth buffer (phones): fit near/far to the altitude so the precision goes where the eye is looking.
             const h = Math.max(10, tel.altitudeMsl);
@@ -371,13 +437,23 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
           if (t - hudAt > (lowQ ? 300 : 120)) {
             hudAt = t;
             const bs = buildings.stats;
+            if (!spawnInfo.pending) {
+              recordTick(tel.mach, tel.altitudeAgl, tel.orbit.inOrbit);
+              audio.update({ thrustFraction: Math.max(tel.hover, tel.main), speedMs: tel.speed, muted: f.audioMuted, master: f.audioVolume });
+              const last2 = trailBuf[trailBuf.length - 1];
+              if (!last2 || Math.hypot(tel.lat - last2[0], tel.lon - last2[1]) > 1e-5) { // skip near-duplicate points (parked on the ground)
+                trailBuf.push([tel.lat, tel.lon]);
+                if (trailBuf.length > 400) trailBuf.shift();
+                setTrail(trailBuf.slice());
+              }
+            }
             setHud({
               lat: rd(tel.lat, 4), lon: rd(tel.lon, 4), msl: tel.altitudeMsl, agl: tel.altitudeAgl, speed: tel.speed, vs: tel.verticalSpeed, heading: tel.heading, mach: tel.mach,
               fuel: tel.fuelFraction, mass: tel.mass, pressure: tel.air.pressure / 1000, temperature: tel.air.temperature - 273.15, q: tel.q / 1000, heat: tel.heatFlux / 1e4, sunElev,
               utc: now.toISOString().slice(0, 16).replace('T', ' ') + ' UTC', event: t < eventUntil ? eventText : '',
               terrainReady: manager.stats.ready, underfoot: manager.stats.underfootReady && !spawnInfo.pending, offline: manager.stats.offline, imagery: manager.stats.imagery, tiles: manager.stats.displayed,
               buildings: bs.buildings, estimated: bs.estimatedShare, buildingsLoading: bs.loading, buildingsFailed: bs.failed > 0 && bs.cells === 0, space: tel.inSpace, flight: tel.flightMode, throttle: tel.throttle,
-              pitch: tel.pitch, warp: warpNow, warpMax, ap: tel.orbit.apoapsis, pe: tel.orbit.periapsis, vOrb: tel.orbit.inertialSpeed, vCirc: tel.orbit.circularSpeed, inOrbit: tel.orbit.inOrbit,
+              pitch: tel.pitch, warp: warpNow, warpMax, ap: tel.orbit.apoapsis, pe: tel.orbit.periapsis, vOrb: tel.orbit.inertialSpeed, vCirc: tel.orbit.circularSpeed, inOrbit: tel.orbit.inOrbit, gForce: tel.gForce,
             });
           }
         };
@@ -386,8 +462,9 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
         (window as unknown as { __earth?: unknown }).__earth = { state, manager, buildings, model, teleport, get lit() { return lit; } };
         cleanup = () => {
           cancelAnimationFrame(raf); ro.disconnect(); window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); window.removeEventListener('blur', onBlur);
+          window.removeEventListener('pointerdown', resumeAudio); window.removeEventListener('keydown', resumeAudio);
           actions.current = null; delete (window as unknown as { __earth?: unknown }).__earth;
-          model.dispose(); dust.dispose(); buildings.dispose(); manager.dispose(); sky.dispose(); renderer.dispose(); canvas.remove();
+          model.dispose(); dust.dispose(); buildings.dispose(); manager.dispose(); sky.dispose(); renderer.dispose(); canvas.remove(); audio.dispose();
         };
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Earth could not start on this device.');
@@ -408,6 +485,26 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
     setCoordError(''); actions.current?.teleport(lat, lon, 0);
   };
   const place = placeById(placeId);
+  const flownKm = useMemo(() => trailDistanceDeg(trail) / 1000, [trail]);
+  const dismissCrash = () => { setCrashInfo(null); actions.current?.respawn(); };
+  // The reality dial (docs/fly/09-physicality-charter.md §1.8) is a starting preset for the assists, not a lock -
+  // the checkboxes in the help panel can still be changed afterward. Only the assists are differentiated today;
+  // fuel forgiveness and recall-gating per the charter's full Strict description are not built yet.
+  const setRealityPreset = (next: typeof reality) => { setReality(next); setHoverAssist(next !== 'strict'); setLevelAssist(next !== 'strict'); };
+  const warnings = useMemo(() => (hud ? computeWarnings({ fuel: hud.fuel, gForce: hud.gForce, offline: hud.offline }) : []), [hud]);
+  const skipOnboarding = () => { setOnboardingStep(ONBOARDING_DONE); updateSettings({ firstFlightDone: true }); };
+  const isFirstViewRender = useRef(true);
+  useEffect(() => {
+    if (isFirstViewRender.current) { isFirstViewRender.current = false; return; }
+    viewSwitchedRef.current = true;
+  }, [view]);
+  useEffect(() => {
+    if (!hud || onboardingStep === ONBOARDING_DONE) return;
+    const now = performance.now();
+    if (onboardingStep === 4 && finalStepShownAtRef.current === null) finalStepShownAtRef.current = now;
+    const next = nextOnboardingStep(onboardingStep, { agl: hud.agl, event: hud.event }, viewSwitchedRef.current, finalStepShownAtRef.current, now, !isTouch);
+    if (next !== onboardingStep) { setOnboardingStep(next); if (next === ONBOARDING_DONE) updateSettings({ firstFlightDone: true }); }
+  }, [hud, onboardingStep, isTouch]);
 
   return (
     <Box position="fixed" inset={0} bg="#0a0d14" data-testid="earth" sx={isTouch ? { '& *': { backdropFilter: 'none !important' } } : undefined}>
@@ -416,11 +513,23 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
       {!ready && !error && <Flex position="absolute" inset={0} align="center" justify="center" pointerEvents="none" bg="#0a0d14"><Text color="content.muted">Spinning up the planet…</Text></Flex>}
       {view === 'first' && <Box position="absolute" inset={0} pointerEvents="none" boxShadow="inset 0 0 160px 40px rgba(0,0,0,0.35)" />}
 
-      {!hideUi && ready && (
+      {!hideUi && !photoMode && ready && (
         <>
+          {warnings.length > 0 && (
+            <Flex position="absolute" top={3} left="50%" transform="translateX(-50%)" direction="column" align="center" gap={1} pointerEvents="none" zIndex={5} data-testid="earth-warnings">
+              {warnings.map((w) => (
+                <HStack key={w.id} {...glass} px={3} py={1} spacing={2} borderColor={w.level === 'warning' ? 'red.400' : 'orange.300'} data-testid={`earth-warning-${w.id}`}>
+                  <Text as="span" aria-hidden="true" color={w.level === 'warning' ? 'red.300' : 'orange.300'}>{w.level === 'warning' ? '⬤' : '▲'}</Text>
+                  <Text fontSize="sm" fontWeight={600} color={w.level === 'warning' ? 'red.200' : 'orange.200'}>{w.text}</Text>
+                  <Text fontSize="sm" color="content.secondary">— {w.action}</Text>
+                </HStack>
+              ))}
+            </Flex>
+          )}
           <Flex position="absolute" top={3} left={3} direction="column" align="start" gap={2} maxW="calc(100% - 64px)" pointerEvents="none">
             <HStack spacing={2} wrap="wrap" align="start" opacity={awake ? 1 : 0} pointerEvents={awake ? 'auto' : 'none'} transition="opacity 0.4s" _focusWithin={{ opacity: 1, pointerEvents: 'auto' }} data-testid="earth-toolbar">
             <Button size="sm" variant="glass" leftIcon={<FiArrowLeft aria-hidden="true" />} onClick={onBack}>Hangar</Button>
+            <Button size="sm" variant="glass" leftIcon={<FiPause aria-hidden="true" />} onClick={() => setPaused(true)} aria-label="Pause">{isTouch ? '' : 'Pause (Esc)'}</Button>
             {!isTouch && <Button size="xs" variant={packUpdate === 'available' ? 'solid' : 'glass'} colorScheme={packUpdate === 'available' ? 'green' : undefined} isLoading={packUpdate === 'checking'} onClick={() => (packUpdate === 'available' ? window.location.reload() : void checkForUpdates())} data-testid="pack-update-button">
               {packUpdate === 'available' ? 'Offline world updated – reload' : packUpdate === 'current' ? 'Offline world up to date' : 'Check for offline updates'}
             </Button>}
@@ -436,6 +545,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               </Select>
               {!isTouch && <Input size="xs" w="150px" placeholder="lat, lon" value={coords} onChange={(e) => setCoords(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') goCoords(); }} aria-label="Go to latitude, longitude" aria-invalid={!!coordError} data-testid="earth-coords" />}
               {!isTouch && <Button size="xs" onClick={goCoords}>Go</Button>}
+              {!isTouch && <PlaceSearch glass={glass} onSelect={(la, lo) => actions.current?.teleport(la, lo, 0)} />}
             </Flex>
           </HStack>
             {coordError && <Text fontSize="xs" color="red.300" role="alert">{coordError}</Text>}
@@ -468,12 +578,19 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               <Checkbox size="sm" isChecked={imageryOn} onChange={(e) => setImageryOn(e.target.checked)}>Satellite imagery</Checkbox>
               <Checkbox size="sm" isChecked={buildingsOn} onChange={(e) => setBuildingsOn(e.target.checked)}>Buildings</Checkbox>
               <Checkbox size="sm" isChecked={labelsOn} isDisabled={!imageryOn} onChange={(e) => setLabelsOn(e.target.checked)}>Street names</Checkbox>
+              <Checkbox size="sm" isChecked={minimapOn} onChange={(e) => setMinimapOn(e.target.checked)}>Minimap (M)</Checkbox>
             </Flex>
             <Flex gap={1} mt={2} align="center"><Text>Time</Text><Button size="xs" onClick={() => actions.current?.timeShift(-1)} aria-label="One hour earlier">−1 h</Button><Button size="xs" onClick={() => actions.current?.timeShift(1)} aria-label="One hour later">+1 h</Button><Button size="xs" onClick={() => actions.current?.timeShift('now')}>Now</Button></Flex>
           </Box>}
 
           
 
+          {onboardingStep !== ONBOARDING_DONE && (
+            <Flex position="absolute" top={isTouch ? '90px' : '70px'} left="50%" transform="translateX(-50%)" {...glass} px={4} py={2} align="center" gap={3} maxW="min(92vw, 420px)" zIndex={5} data-testid="earth-onboarding">
+              <Text fontSize="sm">{(isTouch ? ONBOARDING_STEPS_TOUCH : ONBOARDING_STEPS)[onboardingStep]}</Text>
+              <Button size="xs" variant="ghost" onClick={skipOnboarding}>Skip</Button>
+            </Flex>
+          )}
           <Flex position="absolute" left={3} right={3} bottom={isTouch ? 'auto' : 3} top={isTouch ? '54px' : 'auto'} direction="column" align="center" gap={2} pointerEvents="none" fontSize={isTouch ? 'xs' : undefined}>
             {hud && hud.msl > 20_000 && (
               <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="sm" data-testid="earth-orbit">
@@ -515,6 +632,7 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
               {hud?.flight && <Text>THR <b data-testid="hud-throttle">{fmt(hud.throttle * 100)}</b>%</Text>}
               {hud && (hud.msl > 15_000 || hud.flight) && <Text>PITCH <b data-testid="hud-pitch">{fmt(hud.pitch)}</b>°</Text>}
               <Text>FUEL <b>{fmt((hud?.fuel ?? 1) * 100)}</b>%</Text>
+              {flownKm > 0 && <Text>FLOWN <b>{fmt(flownKm, flownKm < 100 ? 1 : 0)}</b> km</Text>}
             </Flex>
 
             <Flex {...glass} px={4} py={1} gap={4} wrap="wrap" justify="center" fontFamily="mono" fontSize="xs" color="content.muted" data-testid="earth-air">
@@ -530,10 +648,103 @@ export default function EarthFlight({ onBack }: { onBack: () => void }) {
             </Text>
             )}
           </Flex>
+          {minimapOn && hud && <Minimap lat={hud.lat} lon={hud.lon} heading={hud.heading} agl={hud.agl} glass={glass} trail={trail} onSelectPlace={(la, lo) => actions.current?.teleport(la, lo, 0)} />}
         </>
       )}
-      {isTouch && ready && <TouchControls input={touchInput} actions={() => actions.current} />}
+      {crashInfo && ready && (
+        <Flex position="absolute" inset={0} align="center" justify="center" bg="blackAlpha.700" zIndex={21} data-testid="earth-recall">
+          <Box {...glass} p={6} w="min(92vw, 400px)" role="dialog" aria-modal="true" aria-label="The ship was recalled">
+            <Text fontWeight={700} fontSize="lg" mb={2} color="red.300">Recalled to the last takeoff point</Text>
+            <Text fontSize="sm" color="content.secondary" mb={4}>
+              Touchdown at {fmt(crashInfo.speed, 1)} m/s exceeded the gear&apos;s rated {fmt(crashInfo.maxVz, 1)} m/s sink rate.
+            </Text>
+            <Button onClick={dismissCrash} autoFocus>Back to takeoff</Button>
+          </Box>
+        </Flex>
+      )}
+      {logbookOpen && ready && (
+        <Flex position="absolute" inset={0} align="center" justify="center" bg="blackAlpha.700" zIndex={22} data-testid="earth-logbook">
+          <Box {...glass} p={6} w="min(92vw, 480px)" maxH="80vh" overflowY="auto" role="dialog" aria-modal="true" aria-label="Logbook">
+            <Text fontWeight={700} fontSize="lg" mb={3}>Logbook</Text>
+            <Text fontSize="sm" fontWeight={600} color="content.secondary" mb={1}>Badges</Text>
+            <Stack spacing={1} mb={4}>
+              {badges.map((b) => (
+                <HStack key={b.id} justify="space-between" fontSize="sm">
+                  <Text color={b.achieved ? 'content.primary' : 'content.muted'}>{b.achieved ? '✓' : '○'} {b.label}</Text>
+                  {b.progress && <Text color="content.muted" fontSize="xs">{b.progress}</Text>}
+                </HStack>
+              ))}
+            </Stack>
+            <Text fontSize="sm" fontWeight={600} color="content.secondary" mb={1}>Recent flights</Text>
+            {logEntries.length === 0 && <Text fontSize="sm" color="content.muted" mb={3}>No landings recorded yet.</Text>}
+            <Stack spacing={2} mb={4} fontSize="xs" fontFamily="mono">
+              {logEntries.slice(0, 10).map((e, i) => (
+                <HStack key={i} justify="space-between" color={e.kind === 'crash' ? 'red.300' : e.kind === 'rough' ? 'orange.300' : 'content.secondary'}>
+                  <Text>{e.kind.toUpperCase()} {e.place ? `· ${placeById(e.place)?.name.split(',')[0] ?? e.place}` : ''}</Text>
+                  <Text>{fmt(e.touchdownSpeed, 1)} m/s · {fmt(e.distanceKm, 0)} km · {fmt(e.flightTimeS / 60, 1)} min</Text>
+                </HStack>
+              ))}
+            </Stack>
+            <Button onClick={() => setLogbookOpen(false)}>Close</Button>
+          </Box>
+        </Flex>
+      )}
+      {paused && ready && !crashed && !logbookOpen && (
+        <Flex position="absolute" inset={0} align="center" justify="center" bg="blackAlpha.700" zIndex={20} data-testid="earth-pause">
+          <Box {...glass} p={6} w="min(92vw, 360px)" role="dialog" aria-modal="true" aria-label="Paused">
+            <Text fontWeight={700} fontSize="lg" mb={4}>Paused</Text>
+            <Stack spacing={4} mb={2}>
+              <Button onClick={() => setPaused(false)} autoFocus>Resume</Button>
+              <Box>
+                <Text fontSize="sm" color="content.secondary" mb={1}>Comfort</Text>
+                <Select size="sm" value={reducedMotionPref} onChange={(e) => setReducedMotionPref(e.target.value as typeof reducedMotionPref)} aria-label="Reduced motion">
+                  <option value="auto">Reduced motion: follow system setting</option>
+                  <option value="on">Reduced motion: on</option>
+                  <option value="off">Reduced motion: off</option>
+                </Select>
+              </Box>
+              <Box>
+                <Text fontSize="sm" color="content.secondary" mb={1}>Reality</Text>
+                <Select size="sm" value={reality} onChange={(e) => setRealityPreset(e.target.value as typeof reality)} aria-label="Reality preset">
+                  <option value="cinematic">Cinematic — assists on</option>
+                  <option value="physical">Physical — assists on (default)</option>
+                  <option value="strict">Strict — assists off</option>
+                </Select>
+                <Text fontSize="xs" color="content.muted" mt={1}>Sets Hover assist and Level assist; you can still toggle either one in Controls afterward.</Text>
+              </Box>
+              <Box>
+                <HStack justify="space-between" mb={1}>
+                  <Text fontSize="sm" color="content.secondary">Audio</Text>
+                  <Checkbox size="sm" isChecked={audioMuted} onChange={(e) => setAudioMuted(e.target.checked)}>Mute</Checkbox>
+                </HStack>
+                <Slider aria-label="Audio volume" value={audioVolume} min={0} max={1} step={0.05} onChange={setAudioVolume} isDisabled={audioMuted}>
+                  <SliderTrack><SliderFilledTrack /></SliderTrack>
+                  <SliderThumb />
+                </Slider>
+              </Box>
+              <Button variant="outline" onClick={() => { setPaused(false); setPhotoMode(true); setPhotoFov(0); }}>Photo mode</Button>
+              <Button variant="outline" onClick={openLogbook}>Logbook</Button>
+              <Button variant="outline" onClick={onBack}>Exit to hangar</Button>
+            </Stack>
+            <Text fontSize="xs" color="content.muted">Esc to resume · the ship holds its position while paused</Text>
+          </Box>
+        </Flex>
+      )}
+      {isTouch && ready && !photoMode && <TouchControls input={touchInput} actions={() => actions.current} />}
+      {photoMode && ready && (
+        <Flex position="absolute" bottom={3} left="50%" transform="translateX(-50%)" align="center" gap={3} {...glass} px={4} py={2} data-testid="earth-photo-bar">
+          <Text fontSize="xs" color="content.secondary">Photo mode · frozen</Text>
+          <Box w="140px">
+            <Slider aria-label="Field of view" value={photoFov || 55} min={20} max={110} step={1} onChange={setPhotoFov}>
+              <SliderTrack><SliderFilledTrack /></SliderTrack>
+              <SliderThumb />
+            </Slider>
+          </Box>
+          <Button size="xs" onClick={() => { setPhotoMode(false); setPhotoFov(0); }}>Exit (P)</Button>
+        </Flex>
+      )}
       <VisuallyHidden role="status" aria-live="polite">{hud?.event ?? ''}</VisuallyHidden>
+      <VisuallyHidden role="status" aria-live="polite">{warnings.map((w) => `${w.text}: ${w.action}`).join('. ')}</VisuallyHidden>
     </Box>
   );
 }
